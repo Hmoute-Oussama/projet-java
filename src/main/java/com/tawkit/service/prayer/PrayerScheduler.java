@@ -1,4 +1,7 @@
 package com.tawkit.service.prayer;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
 
 import com.tawkit.model.prayer.DailyPrayerTimes;
 import com.tawkit.model.prayer.IqamaSettings;
@@ -11,6 +14,7 @@ import javax.swing.Timer;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalTime;
+
 
 /**
  * Heartbeat of the application. Every second it determines:
@@ -152,8 +156,8 @@ public class PrayerScheduler {
         return day;
     }
 
-    /** Location timezone if set, otherwise the system default offset. */
-    static double resolveTimezone(Location loc) {
+       /** Location timezone if set, otherwise the system default offset. */
+    public static double resolveTimezone(Location loc) {
         if (loc != null && loc.getTimezone() != 0.0) return loc.getTimezone();
         ZoneId zone = ZoneId.systemDefault();
         return ZoneOffset.from(zone.getRules().getOffset(Instant.now())).getTotalSeconds() / 3600.0;
