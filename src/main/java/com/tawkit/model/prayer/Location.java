@@ -7,6 +7,7 @@ public class Location {
 
     private String name;
     private String country;
+    private String countryCode = "";  // ISO 3166-1 alpha-2 for the flag widget
     private double latitude;
     private double longitude;
     private double timezone;  // offset from UTC in hours
@@ -60,6 +61,14 @@ public class Location {
 
     public void setTimezone(double timezone) {
         this.timezone = timezone;
+    }
+
+    public String getCountryCode() {
+        return countryCode == null ? "" : countryCode;
+    }
+
+    public void setCountryCode(String countryCode) {
+        this.countryCode = countryCode == null ? "" : countryCode.trim().toUpperCase();
     }
 
     public String getDisplayName() {

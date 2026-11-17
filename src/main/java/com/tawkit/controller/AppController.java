@@ -46,6 +46,9 @@ public class AppController implements PrayerScheduler.Listener, WeatherService.L
     private boolean jumuaAlertFired = false;
     private final com.tawkit.service.location.GeoLocationService geoLocation =
             new com.tawkit.service.location.GeoLocationService();
+    private final com.tawkit.service.location.GeocodingService geocoding =
+            new com.tawkit.service.location.GeocodingService();
+    private java.time.Instant lastWeatherRefresh = java.time.Instant.EPOCH; // 30-min cadence
 
     /**
      * Composition root: all services are created here and injected through
@@ -83,17 +86,92 @@ public class AppController implements PrayerScheduler.Listener, WeatherService.L
 
         // Auto-location on first launch (#7): no city configured yet → IP lookup
         if (settings.getLocation() == null) {
-            geoLocation.lookupAsync(
-                    loc -> {
-                        settings.setLocation(loc);
-                        settingsService.save(settings);
-                        settingsChanged();
-                        com.tawkit.infrastructure.Log.info("Auto-location: "
-                                + loc.getDisplayName() + " (" + loc.getLatitude() + ", "
-                                + loc.getLongitude() + ")");
-                    },
-                    msg -> com.tawkit.infrastructure.Log.warn("Auto-location skipped: " + msg));
+            useMyLocationQuietly();
         }
+
+        // Hamburger-menu actions (weather/location widget)
+        frame.setHeaderMenuActions(new MainFrame.HeaderMenuActions() {
+            @Override public void useMyLocation() { useMyLocationInteractive(); }
+            @Override public void searchCity() { openCitySearch(); }
+            @Override public void refreshWeather() { refreshWeatherNow(); }
+            @Override public void toggleTemperatureUnit() { switchTemperatureUnit(); }
+            @Override public void openSettings() { frame.openSettings(); }
+            @Override public void openMonthly() { frame.openMonthly(); }
+            @Override public void toggleFullScreen() { frame.toggleFullScreen(); }
+            @Override public void quit() { System.exit(0); }
+        });
+    }
+
+    /** Silent IP location lookup (first launch): sets location if found. */
+    private void useMyLocationQuietly() {
+        geoLocation.lookupAsync(
+                loc -> {
+                    settings.setLocation(loc);
+                    settingsService.save(settings);
+                    settingsChanged();
+                    com.tawkit.infrastructure.Log.info("Auto-location: "
+                            + loc.getDisplayName() + " (" + loc.getLatitude() + ", "
+                            + loc.getLongitude() + ")");
+                },
+                msg -> com.tawkit.infrastructure.Log.warn("Auto-location skipped: " + msg));
+    }
+
+    /** IP location lookup triggered from the menu, with feedback dialogs. */
+    private void useMyLocationInteractive() {
+        frame.setLocationLabel("Detecting location…");
+        geoLocation.lookupAsync(
+                loc -> {
+                    settings.setLocation(loc);
+                    settingsService.save(settings);
+                    settingsChanged();
+                    com.tawkit.infrastructure.Log.info("Location set via IP: " + loc.getDisplayName());
+                },
+                msg -> javax.swing.SwingUtilities.invokeLater(() ->
+                        javax.swing.JOptionPane.showMessageDialog(frame,
+                                "Could not detect your location automatically:\n" + msg
+                                        + "\n\nUse \"Search city…\" instead.",
+                                "Location unavailable",
+                                javax.swing.JOptionPane.WARNING_MESSAGE)));
+    }
+
+    /** City search dialog → real coordinates + country + flag via geocoding API. */
+    private void openCitySearch() {
+        com.tawkit.view.CitySearchDialog dialog =
+                new com.tawkit.view.CitySearchDialog(frame, place -> {
+                    var loc = new com.tawkit.model.prayer.Location(
+                            place.name(), place.country(),
+                            place.latitude(), place.longitude(), 0.0);
+                    loc.setCountryCode(place.countryCode());
+                    // Accurate zone from the geocoding result (falls back to coords)
+                    if (!place.timezone().isBlank()) {
+                        try {
+                            loc.setTimezone(java.time.ZoneOffset.from(
+                                    java.time.ZoneId.of(place.timezone()).getRules()
+                                            .getOffset(java.time.Instant.now()))
+                                    .getTotalSeconds() / 3600.0);
+                        } catch (Exception ignored) {
+                        }
+                    }
+                    settings.setLocation(loc);
+                    settingsService.save(settings);
+                    settingsChanged();
+                });
+        dialog.setVisible(true);
+    }
+
+    /** Manual refresh from the menu. */
+    private void refreshWeatherNow() {
+        var loc = settings.getLocation();
+        if (loc == null) return;
+        lastWeatherRefresh = java.time.Instant.now();
+        weatherService.refreshAsync(loc.getLatitude(), loc.getLongitude());
+    }
+
+    /** °C ⇄ °F toggle from the menu (persisted immediately). */
+    private void switchTemperatureUnit() {
+        settings.setTemperatureUnit(settings.getTemperatureUnit() == 'C' ? 'F' : 'C');
+        settingsService.save(settings);
+        applySettingsToFrame(); // re-renders widget with converted temperature
     }
 
     /** Called after the settings dialog was saved. */
@@ -107,10 +185,19 @@ public class AppController implements PrayerScheduler.Listener, WeatherService.L
         if (settings.isWeatherEnabled() && settings.getLocation() != null) {
             weatherService.refreshAsync(settings.getLocation().getLatitude(),
                     settings.getLocation().getLongitude());
+            lastWeatherRefresh = java.time.Instant.now();
         } else {
             // Weather turned off (or no location): clear the stale display
             frame.setWeather(null);
         }
+    }
+
+    /** Real ISO code for the flag: stored one, else derived from the country name. */
+    private String resolveFlagIso(com.tawkit.model.prayer.Location loc) {
+        if (loc.getCountryCode() != null && !loc.getCountryCode().isBlank()) {
+            return loc.getCountryCode();
+        }
+        return com.tawkit.service.city.CountryCodes.fromCountryName(loc.getCountry());
     }
 
     private void applySettingsToFrame() {
@@ -121,15 +208,13 @@ public class AppController implements PrayerScheduler.Listener, WeatherService.L
         var loc = settings.getLocation();
         if (loc != null) {
             frame.setCityInfo(loc.getName(), loc.getLatitude(), loc.getLongitude());
-            frame.setLocationTimezone(loc.getTimezone());
         } else {
             frame.setCityInfo("", 0, 0);
-            frame.setLocationTimezone(java.time.ZoneId.systemDefault()
-                    .getRules().getOffset(java.time.Instant.now()).getTotalSeconds() / 3600.0);
         }
         frame.setUse24Hour(settings.isUse24HourClock());
         frame.setShowSeconds(settings.isShowSeconds());
         frame.setLanguage(settings.getLanguage());
+        frame.setTemperatureUnit(settings.getTemperatureUnit()); // °C/°F widget
 
         hijri.setOffsetDays(settings.getHijriOffsetDays());
         updateDates();
@@ -259,6 +344,13 @@ public class AppController implements PrayerScheduler.Listener, WeatherService.L
             showingAzkar = false;
             frame.setContentItems(buildDefaultContent());
         }
+
+        // Sensible weather refresh cadence (every 30 min) — not every tick
+        if (settings.isWeatherEnabled() && settings.getLocation() != null
+                && java.time.Duration.between(lastWeatherRefresh, java.time.Instant.now())
+                        .toMinutes() >= 30) {
+            refreshWeatherNow();
+        }
     }
 
     @Override
@@ -293,13 +385,25 @@ public class AppController implements PrayerScheduler.Listener, WeatherService.L
     // --------------------------------------------------- weather callbacks
 
     @Override
+    public void onWeatherLoading() {
+        javax.swing.SwingUtilities.invokeLater(frame::setWeatherLoading);
+    }
+
+    @Override
     public void onWeatherUpdated(WeatherData data) {
-        frame.setWeather(data);
+        javax.swing.SwingUtilities.invokeLater(() -> {
+            frame.setWeather(data);
+            frame.setWeatherUpdatedLabel("Updated "
+                    + java.time.LocalTime.now().format(
+                            java.time.format.DateTimeFormatter.ofPattern("HH:mm")));
+        });
+        lastWeatherRefresh = java.time.Instant.now();
     }
 
     @Override
     public void onWeatherError(String message) {
         com.tawkit.infrastructure.Log.warn("Weather: " + message);
+        javax.swing.SwingUtilities.invokeLater(() -> frame.setWeatherError(message));
     }
 
     // -------------------------------------------------------------- helpers

@@ -29,6 +29,11 @@ public class Main {
 
         com.tawkit.view.UiScale.apply(); // high-DPI dialogs (change #16)
 
+        // Never fail silently on the UI thread: log every EDT exception
+        Thread.setDefaultUncaughtExceptionHandler((thread, thrown) ->
+                com.tawkit.infrastructure.Log.error("Uncaught exception on "
+                        + thread.getName(), thrown));
+
         SwingUtilities.invokeLater(() -> {
             try {
                 UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());

@@ -130,6 +130,24 @@ public class TawkitScreen extends JComponent {
         repaint();
     }
 
+    /** Weather widget async state (loading / error) — keeps the icon honest. */
+    public void setWeatherState(HeaderLeftElement.WeatherState state) {
+        headerLeft.setWeatherState(state);
+        repaint();
+    }
+
+    /** °C / °F for the weather widget (converted at render). */
+    public void setTemperatureUnit(char unit) {
+        headerLeft.setTemperatureUnit(unit);
+        repaint();
+    }
+
+    /** ISO country code for the dynamic flag ("" → neutral badge). */
+    public void setCountryFlag(String isoCode) {
+        headerLeft.setCountryCode(isoCode);
+        repaint();
+    }
+
     public void setClockMode(boolean use24, boolean showSeconds) {
         clock.setClockMode(use24, showSeconds);
         schedule.setClockMode(use24);

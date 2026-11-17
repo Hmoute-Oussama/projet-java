@@ -74,7 +74,8 @@ public class SettingsDialog extends JDialog {
     private final JTextField customBgField = new JTextField(18);
     private final JButton customBgBrowse = new JButton("…");
     private final JComboBox<String> languageCombo = new JComboBox<>(
-            new String[]{"en", "ar", "fr", "tr", "ur", "id"});
+            new String[]{"en", "ar", "fr"});
+    private final JComboBox<String> unitCombo = new JComboBox<>(new String[]{"°C", "°F"});
 
     // Content
     private final JSpinner rotationSpinner = new JSpinner(new SpinnerNumberModel(18, 5, 120, 1));
@@ -112,8 +113,17 @@ public class SettingsDialog extends JDialog {
         setIconImage(Icons.appIcon());
         buildUI();
         loadCityCountries();
-        setSize(600, 700);
+        setSize(620, 700);
         setLocationRelativeTo(parent);
+        // ESC closes the dialog like Cancel
+        javax.swing.InputMap im = getRootPane().getInputMap(javax.swing.JComponent.WHEN_IN_FOCUSED_WINDOW);
+        javax.swing.ActionMap am = getRootPane().getActionMap();
+        im.put(javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_ESCAPE, 0), "closeDialog");
+        am.put("closeDialog", new javax.swing.AbstractAction() {
+            @Override public void actionPerformed(java.awt.event.ActionEvent e) {
+                dispose();
+            }
+        });
         // Stop preview timers when the dialog is closed, so nothing repaints a ghost window
         addWindowListener(new java.awt.event.WindowAdapter() {
             @Override
@@ -135,7 +145,11 @@ public class SettingsDialog extends JDialog {
         tabs.addTab("Content", buildContentTab());
         tabs.addTab("Reminders", buildRemindersTab());
         tabs.addTab("Backup", buildBackupTab());
-        add(tabs, BorderLayout.CENTER);
+        // Scrollable so every control stays reachable on small/4K screens
+        JScrollPane tabsScroll = new JScrollPane(tabs);
+        tabsScroll.setBorder(null);
+        tabsScroll.getVerticalScrollBar().setUnitIncrement(16);
+        add(tabsScroll, BorderLayout.CENTER);
 
         JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
         JButton applyButton = new JButton("Apply");
@@ -382,7 +396,30 @@ public class SettingsDialog extends JDialog {
         gbc.gridx = 1;
         panel.add(preFajrMinutes, gbc);
 
-        gbc.gridy = 4; gbc.gridx = 0; gbc.gridwidth = 2;
+        // Live test so the slider is verifiable immediately
+        gbc.gridy = 4; gbc.gridx = 0;
+        panel.add(new JLabel(""), gbc);
+        gbc.gridx = 1;
+        JButton testSound = new JButton("🔊 Test sound");
+        testSound.addActionListener(e -> {
+            double vol = volumeSlider.getValue() / 100.0;
+            Thread player = new Thread(() -> {
+                try {
+                    com.tawkit.infrastructure.audio.ToneGenerator.playSequence(
+                            com.tawkit.infrastructure.audio.ToneGenerator.alertBeeps(), vol);
+                } catch (Exception ex) {
+                    com.tawkit.infrastructure.Log.warn("Sound test failed ("
+                            + ex.getMessage() + ")");
+                }
+            }, "tawkit-soundtest");
+            player.setDaemon(true);
+            player.start();
+        });
+        JPanel testRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
+        testRow.add(testSound);
+        panel.add(testRow, gbc);
+
+        gbc.gridy = 5; gbc.gridx = 0; gbc.gridwidth = 2;
         panel.add(new JLabel("<html><i>Adhan plays bundled WAV files from "
                 + "<b>assets/audio/</b> — or a chime when none exist.</i></html>"), gbc);
 
@@ -450,6 +487,11 @@ public class SettingsDialog extends JDialog {
         gbc.gridx = 1;
         panel.add(themeCombo, gbc);
 
+        gbc.gridy = 7; gbc.gridx = 0;
+        panel.add(new JLabel("Temperature unit:"), gbc);
+        gbc.gridx = 1;
+        panel.add(unitCombo, gbc);
+
         gbc.gridy = 6; gbc.gridx = 0;
         panel.add(new JLabel("Custom background image:"), gbc);
         gbc.gridx = 1;
@@ -460,10 +502,10 @@ public class SettingsDialog extends JDialog {
         panel.add(bgRow, gbc);
 
         // ---- Live dashboard preview (#15) ----
-        gbc.gridy = 7; gbc.gridx = 0; gbc.gridwidth = 2;
+        gbc.gridy = 8; gbc.gridx = 0; gbc.gridwidth = 2;
         panel.add(new JLabel("Live preview (theme, background, mosque name):"), gbc);
         gbc.gridwidth = 1;
-        gbc.gridy = 8; gbc.gridx = 0; gbc.gridwidth = 2;
+        gbc.gridy = 9; gbc.gridx = 0; gbc.gridwidth = 2;
         previewScreen.setPreferredSize(new Dimension(340, 192));
         previewScreen.setMosqueName(mosqueField.getText());
         previewScreen.applyTheme((String) themeCombo.getSelectedItem());
@@ -728,6 +770,7 @@ public class SettingsDialog extends JDialog {
         hijriOffset.setValue(settings.getHijriOffsetDays());
         themeCombo.setSelectedItem(settings.getBackgroundTheme());
         customBgField.setText(settings.getCustomBackgroundPath());
+        unitCombo.setSelectedItem(settings.getTemperatureUnit() == 'F' ? "°F" : "°C");
 
         slidesCheck.setSelected(settings.isSlidesEnabled());
         weatherCheck.setSelected(settings.isWeatherEnabled());
@@ -800,6 +843,7 @@ public class SettingsDialog extends JDialog {
         settings.setHijriOffsetDays((Integer) hijriOffset.getValue());
         settings.setBackgroundTheme((String) themeCombo.getSelectedItem());
         settings.setCustomBackgroundPath(customBgField.getText().trim());
+        settings.setTemperatureUnit("°F".equals(unitCombo.getSelectedItem()) ? 'F' : 'C');
 
         settings.setSlidesEnabled(slidesCheck.isSelected());
         settings.setWeatherEnabled(weatherCheck.isSelected());

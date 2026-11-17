@@ -99,8 +99,9 @@ public class SettingsService {
 
         Location loc = s.getLocation();
         if (loc != null) {
+            String cc = loc.getCountryCode().isBlank() ? "" : "|" + loc.getCountryCode();
             p.setProperty("location", loc.getName() + "|" + loc.getCountry() + "|"
-                    + loc.getLatitude() + "|" + loc.getLongitude() + "|" + loc.getTimezone());
+                    + loc.getLatitude() + "|" + loc.getLongitude() + "|" + loc.getTimezone() + cc);
         }
         p.setProperty("calculationMethod", s.getCalculationMethod().name());
         p.setProperty("asrMethod", s.getAsrMethod().name());
@@ -136,6 +137,7 @@ public class SettingsService {
         if (s.getJumuaKhutbaTime() != null) {
             p.setProperty("jumuaKhutbaTime", s.getJumuaKhutbaTime().toString());
         }
+        p.setProperty("temperatureUnit", String.valueOf(s.getTemperatureUnit()));
 
         putList(p, "announcement", s.getAnnouncements());
         putList(p, "reminder", s.getReminders());
@@ -152,12 +154,14 @@ public class SettingsService {
 
         String locStr = p.getProperty("location", "");
         if (!locStr.isBlank()) {
-            String[] f = locStr.split("\\|", 5);
+            String[] f = locStr.split("\\|");
             if (f.length >= 5) {
                 try {
-                    s.setLocation(new Location(f[0], f[1],
+                    Location loc = new Location(f[0], f[1],
                             Double.parseDouble(f[2]), Double.parseDouble(f[3]),
-                            Double.parseDouble(f[4])));
+                            Double.parseDouble(f[4]));
+                    if (f.length >= 6) loc.setCountryCode(f[5]); // optional ISO flag code
+                    s.setLocation(loc);
                 } catch (NumberFormatException ignored) {
                 }
             }
@@ -206,6 +210,7 @@ public class SettingsService {
             if (!kt.isBlank()) s.setJumuaKhutbaTime(java.time.LocalTime.parse(kt));
         } catch (Exception ignored) {
         }
+        s.setTemperatureUnit(p.getProperty("temperatureUnit", "C").charAt(0));
 
         s.setAnnouncements(readList(p, "announcement"));
         s.setReminders(readList(p, "reminder"));

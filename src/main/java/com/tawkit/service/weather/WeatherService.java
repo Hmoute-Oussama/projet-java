@@ -24,6 +24,7 @@ import java.util.function.Consumer;
 public class WeatherService {
 
     public interface Listener {
+        default void onWeatherLoading() {}
         default void onWeatherUpdated(WeatherData data) {}
         default void onWeatherError(String message) {}
     }
@@ -35,6 +36,10 @@ public class WeatherService {
     private final Listener listener;
     private volatile WeatherData lastData;
     private volatile LocalDate lastFetchDate;
+    private volatile java.time.Instant lastUpdate;
+    /** Monotonic request counter — stale responses are dropped (race guard). */
+    private final java.util.concurrent.atomic.AtomicInteger requestSeq =
+            new java.util.concurrent.atomic.AtomicInteger();
 
     public WeatherService(Listener listener) {
         this.listener = listener;
@@ -44,14 +49,30 @@ public class WeatherService {
         return lastData;
     }
 
+    /** Time of the last successful fetch, for the "Updated HH:mm" label. */
+    public java.time.Instant getLastUpdate() {
+        return lastUpdate;
+    }
+
     /** Fetches weather for the given coordinates asynchronously. */
     public void refreshAsync(double latitude, double longitude) {
-        Thread t = new Thread(() -> refresh(latitude, longitude), "tawkit-weather");
+        final int seq = requestSeq.incrementAndGet();
+        if (listener != null) listener.onWeatherLoading();
+        Thread t = new Thread(() -> {
+            WeatherData fresh = refresh(latitude, longitude);
+            // A newer request has been started meanwhile → discard this result
+            if (seq != requestSeq.get()) {
+                com.tawkit.infrastructure.Log.info("Weather response dropped (superseded)");
+            } else if (fresh != null) {
+                lastUpdate = java.time.Instant.now();
+                if (listener != null) listener.onWeatherUpdated(fresh);
+            }
+        }, "tawkit-weather");
         t.setDaemon(true);
         t.start();
     }
 
-    /** Blocking fetch; returns the data or null on failure. */
+    /** Blocking fetch; returns the data or null on failure. Callback delivery happens in {@link #refreshAsync}. */
     public WeatherData refresh(double latitude, double longitude) {
         try {
             String url = buildUrl(latitude, longitude);
@@ -68,7 +89,6 @@ public class WeatherService {
             WeatherData data = parse(response.body());
             lastData = data;
             lastFetchDate = LocalDate.now();
-            if (listener != null) listener.onWeatherUpdated(data);
             return data;
         } catch (IOException | InterruptedException e) {
             if (e instanceof InterruptedException) Thread.currentThread().interrupt();
@@ -84,7 +104,7 @@ public class WeatherService {
     static String buildUrl(double lat, double lon) {
         return "https://api.open-meteo.com/v1/forecast?latitude=" + lat
                 + "&longitude=" + lon
-                + "&current=temperature_2m,weather_code,wind_speed_10m"
+                + "&current=temperature_2m,weather_code,wind_speed_10m,is_day"
                 + "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum"
                 + "&forecast_days=7&timezone="
                 + URLEncoder.encode("auto", StandardCharsets.UTF_8);
@@ -98,6 +118,7 @@ public class WeatherService {
         double curTemp = extractNumber(json, "temperature_2m");
         int curCode = (int) extractNumber(json, "weather_code");
         double wind = extractNumber(json, "wind_speed_10m");
+        boolean isDay = extractNumber(json, "is_day") >= 1;
 
         String daily = extractObject(json, "daily");
         if (daily == null) return new WeatherData(curTemp, curCode, wind, List.of());
@@ -119,7 +140,7 @@ public class WeatherService {
                     max != null && i < max.length ? max[i] : 0,
                     prec != null && i < prec.length ? prec[i] : 0));
         }
-        return new WeatherData(curTemp, curCode, wind, List.copyOf(days));
+        return new WeatherData(curTemp, curCode, wind, isDay, List.copyOf(days));
     }
 
     // ------------------------------------------------------------ JSON utils

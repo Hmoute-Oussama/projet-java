@@ -69,7 +69,9 @@ public class GeoLocationService {
         if (tz == 0) {
             tz = TimezoneCheck.resolve(new Location(city, country, lat, lon, 0.0), null);
         }
-        return new Location(city, country, lat, lon, tz);
+        Location loc = new Location(city, country, lat, lon, tz);
+        loc.setCountryCode(extractString(json, "country_code")); // real flag, not a guess
+        return loc;
     }
 
     // ------------------------------------------------------------ JSON utils
