@@ -44,6 +44,8 @@ public class AudioService {
     private volatile double volume = 1.0;
     private volatile boolean enabled = true;
     private volatile Clip currentClip;
+    private final java.util.EnumMap<PrayerType, String> customAdhanFiles =
+            new java.util.EnumMap<>(PrayerType.class);
 
     public void setVolume(double volume) {
         this.volume = Math.max(0.0, Math.min(1.0, volume));
@@ -51,6 +53,17 @@ public class AudioService {
 
     public void setEnabled(boolean enabled) {
         this.enabled = enabled;
+    }
+
+    /**
+     * Custom adhan WAV per prayer (change #6). An absolute or relative file
+     * path; empty/missing falls back to the bundled sound. Applied by the
+     * controller after settings change.
+     */
+    public void setCustomAdhanFile(PrayerType type, String path) {
+        if (type == null) return;
+        if (path == null || path.isBlank()) customAdhanFiles.remove(type);
+        else customAdhanFiles.put(type, path.trim());
     }
 
     public boolean isEnabled() {
@@ -65,7 +78,7 @@ public class AudioService {
                     playFallback(sound);
                 }
             } catch (Exception e) {
-                System.err.println("[Audio] playback failed: " + e.getMessage());
+                com.tawkit.infrastructure.Log.warn("Audio playback failed: " + e.getMessage());
             }
         });
     }
@@ -86,12 +99,30 @@ public class AudioService {
     // ------------------------------------------------------------ internals
 
     private boolean playBundled(Sound sound, PrayerType forPrayer) {
+        // Custom per-prayer adhan file takes priority (change #6)
+        if (forPrayer != null && (sound == Sound.ADHAN || sound == Sound.ADHAN_FAJR)) {
+            String custom = customAdhanFiles.get(forPrayer);
+            if (custom != null && playFile(custom)) return true;
+        }
         String path = resourcePath(sound, forPrayer);
         URL url = getClass().getResource(path);
-        if (url == null) return false;
+        if (url == null) return false; // missing WAV → synth fallback (hardened, change #3)
         try {
             return playClip(url);
         } catch (Exception e) {
+            com.tawkit.infrastructure.Log.warn("WAV unreadable " + path
+                    + " (" + e.getMessage() + ") — using synth fallback");
+            return false;
+        }
+    }
+
+    /** Plays a user-provided WAV from the filesystem; false when unusable. */
+    private boolean playFile(String path) {
+        try {
+            return playClip(new java.io.File(path).toURI().toURL());
+        } catch (Exception e) {
+            com.tawkit.infrastructure.Log.warn("Custom adhan unreadable " + path
+                    + " (" + e.getMessage() + ") — falling back to bundled");
             return false;
         }
     }

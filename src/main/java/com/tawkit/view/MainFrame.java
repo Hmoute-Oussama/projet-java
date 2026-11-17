@@ -35,13 +35,15 @@ public class MainFrame extends JFrame {
     private Rectangle savedBounds;
     private int savedExtendedState;
     private Runnable settingsOpener;
+    private Runnable monthlyOpener;   // monthly times dialog (#1)
 
     public MainFrame() {
         super("Tawkit - Prayer Times");
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        setIconImage(Icons.appIcon()); // taskbar/window icon (change #4)
 
         screen = new TawkitScreen();
-        screen.setOnMenuClick(this::openSettings);
+        screen.setOnMenuClick(this::showMainMenu);
 
         slidesPanel = new SlidesPanel(new File(System.getProperty("user.home"), ".tawkit/slides"));
 
@@ -109,6 +111,14 @@ public class MainFrame extends JFrame {
             }
         });
         rp.getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW)
+                .put(KeyStroke.getKeyStroke(KeyEvent.VK_M, InputEvent.CTRL_DOWN_MASK), "monthly");
+        rp.getActionMap().put("monthly", new AbstractAction() {
+            @Override
+            public void actionPerformed(java.awt.event.ActionEvent e) {
+                openMonthly();
+            }
+        });
+        rp.getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW)
                 .put(KeyStroke.getKeyStroke(KeyEvent.VK_Q, InputEvent.CTRL_DOWN_MASK), "quit");
         rp.getActionMap().put("quit", new AbstractAction() {
             @Override
@@ -146,6 +156,36 @@ public class MainFrame extends JFrame {
     /** Lets the controller intercept the settings dialog. */
     public void setSettingsOpener(Runnable opener) {
         this.settingsOpener = opener;
+    }
+
+    /** Lets the controller open the monthly prayer-times dialog (#1). */
+    public void setMonthlyOpener(Runnable opener) {
+        this.monthlyOpener = opener;
+    }
+
+    /** Popup menu from the ☰ button: settings, monthly times, quit. */
+    private void showMainMenu() {
+        JPopupMenu menu = new JPopupMenu();
+        javax.swing.JMenuItem settingsItem = new javax.swing.JMenuItem("Settings…");
+        settingsItem.addActionListener(e -> openSettings());
+        javax.swing.JMenuItem monthlyItem = new javax.swing.JMenuItem("Monthly prayer times…");
+        monthlyItem.addActionListener(e -> openMonthly());
+        javax.swing.JMenuItem fullscreenItem = new javax.swing.JMenuItem("Toggle full screen (F11)");
+        fullscreenItem.addActionListener(e -> toggleFullScreen());
+        javax.swing.JMenuItem quitItem = new javax.swing.JMenuItem("Quit (Ctrl+Q)");
+        quitItem.addActionListener(e -> System.exit(0));
+        menu.add(settingsItem);
+        menu.add(monthlyItem);
+        menu.add(fullscreenItem);
+        menu.addSeparator();
+        menu.add(quitItem);
+        menu.show(this, 40, 40);
+    }
+
+    public void openMonthly() {
+        if (monthlyOpener != null) {
+            monthlyOpener.run();
+        }
     }
 
     // ---------------- Public update methods (controller calls these) ----
@@ -255,6 +295,11 @@ public class MainFrame extends JFrame {
 
     public void setTickerMessages(List<String> messages) {
         screen.setFooterTexts(messages);
+    }
+
+    /** Corner verse-of-the-day widget (#8). */
+    public void setVerseOfDay(com.tawkit.model.content.ContentItem verse) {
+        screen.setVerseOfDay(verse);
     }
 
     public void setDimmed(boolean dimmed) {

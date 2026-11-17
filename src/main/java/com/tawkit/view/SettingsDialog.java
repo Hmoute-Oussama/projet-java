@@ -56,6 +56,12 @@ public class SettingsDialog extends JDialog {
     private final JSlider volumeSlider = new JSlider(0, 100, 100);
     private final JCheckBox preFajrAlertCheck = new JCheckBox("Alert before Fajr", true);
     private final JSpinner preFajrMinutes = new JSpinner(new SpinnerNumberModel(10, 1, 60, 1));
+    /** Custom adhan WAV per prayer (#6) — empty text uses the bundled sound. */
+    private final Map<PrayerType, JTextField> adhanFileFields = new LinkedHashMap<>();
+
+    // Jumu'a (#5)
+    private final JCheckBox jumuaCheck = new JCheckBox("Jumu'a mode (khutba time replaces Dhuhr iqama on Fridays)", true);
+    private final JTextField jumuaKhutbaField = new JTextField(6);
 
     // Display
     private final JCheckBox dimCheck = new JCheckBox("Dim screen during prayer", true);
@@ -80,13 +86,41 @@ public class SettingsDialog extends JDialog {
     private final DefaultListModel<String> reminderModel = new DefaultListModel<>();
 
     private boolean saved = false;
+    /** Live dashboard preview (#15) — a real TawkitScreen at miniature size. */
+    private final TawkitScreen previewScreen = new TawkitScreen();
+    private boolean previewUpdating = false;
+    /**
+     * The live settings object this dialog edits (applied immediately on
+     * "Apply" / "Save" so the app reflects changes without restart).
+     */
+    private AppSettings liveSettings;
+    /** Fired after changes were pushed into the live settings. */
+    private Runnable onApply;
 
     public SettingsDialog(JFrame parent) {
+        this(parent, null);
+    }
+
+    /**
+     * Preferred constructor: pass the live {@link AppSettings} so
+     * <b>Apply</b> pushes changes straight into the running app via
+     * {@link #setOnApply(Runnable)}.
+     */
+    public SettingsDialog(JFrame parent, AppSettings settings) {
         super(parent, "Settings", true);
+        this.liveSettings = settings;
+        setIconImage(Icons.appIcon());
         buildUI();
         loadCityCountries();
-        setSize(600, 640);
+        setSize(600, 700);
         setLocationRelativeTo(parent);
+        // Stop preview timers when the dialog is closed, so nothing repaints a ghost window
+        addWindowListener(new java.awt.event.WindowAdapter() {
+            @Override
+            public void windowClosed(java.awt.event.WindowEvent e) {
+                previewScreen.stop();
+            }
+        });
     }
 
     private void buildUI() {
@@ -104,16 +138,34 @@ public class SettingsDialog extends JDialog {
         add(tabs, BorderLayout.CENTER);
 
         JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        JButton applyButton = new JButton("Apply");
+        applyButton.setToolTipText("Apply changes to the app without closing");
+        applyButton.addActionListener(e -> applyNow());
         JButton saveButton = new JButton("Save");
         JButton cancelButton = new JButton("Cancel");
         saveButton.addActionListener(e -> {
             saved = true;
+            applyNow();
             dispose();
         });
         cancelButton.addActionListener(e -> dispose());
         buttonPanel.add(saveButton);
+        buttonPanel.add(applyButton);
         buttonPanel.add(cancelButton);
         add(buttonPanel, BorderLayout.SOUTH);
+    }
+
+    /** Pushes the dialog contents into the live settings and notifies the app. */
+    private void applyNow() {
+        if (liveSettings == null) return;
+        applyToSettings(liveSettings);
+        if (onApply != null) onApply.run();
+        refreshPreview(); // reflect theme/bg immediately in the mini dashboard
+    }
+
+    /** Registers the callback that applies changes to the running app. */
+    public void setOnApply(Runnable onApply) {
+        this.onApply = onApply;
     }
 
     private void loadCityCountries() {
@@ -257,6 +309,18 @@ public class SettingsDialog extends JDialog {
             panel.add(spinner, gbc);
             row++;
         }
+
+        // ---- Jumu'a mode (#5) ----
+        gbc.gridy = row + 1; gbc.gridx = 0; gbc.gridwidth = 2;
+        panel.add(jumuaCheck, gbc);
+        gbc.gridwidth = 1;
+        gbc.gridy = row + 2; gbc.gridx = 0;
+        panel.add(new JLabel("Khutba time (Friday):"), gbc);
+        gbc.gridx = 1;
+        JPanel khutbaRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
+        khutbaRow.add(jumuaKhutbaField);
+        khutbaRow.add(new JLabel("HH:MM"));
+        panel.add(khutbaRow, gbc);
         return panel;
     }
 
@@ -321,7 +385,36 @@ public class SettingsDialog extends JDialog {
         gbc.gridy = 4; gbc.gridx = 0; gbc.gridwidth = 2;
         panel.add(new JLabel("<html><i>Adhan plays bundled WAV files from "
                 + "<b>assets/audio/</b> — or a chime when none exist.</i></html>"), gbc);
+
+        // ---- Per-prayer custom adhan files (#6) ----
+        gbc.gridy = 5; gbc.gridx = 0; gbc.gridwidth = 2;
+        panel.add(new JLabel("Custom adhan WAV per prayer (blank = bundled):"), gbc);
+        gbc.gridwidth = 1;
+        int fileRow = 6;
+        for (PrayerType type : IQAMA_PRAYERS) {
+            JTextField field = new JTextField(14);
+            adhanFileFields.put(type, field);
+            JButton browse = new JButton("…");
+            browse.addActionListener(e -> chooseAdhanFile(field));
+
+            gbc.gridy = fileRow; gbc.gridx = 0;
+            panel.add(new JLabel(type.getDisplayName() + ":"), gbc);
+            gbc.gridx = 1;
+            JPanel row = new JPanel(new BorderLayout(4, 0));
+            row.add(field, BorderLayout.CENTER);
+            row.add(browse, BorderLayout.EAST);
+            panel.add(row, gbc);
+            fileRow++;
+        }
         return panel;
+    }
+
+    private void chooseAdhanFile(JTextField target) {
+        JFileChooser chooser = new JFileChooser();
+        chooser.setFileFilter(new FileNameExtensionFilter("WAV audio", "wav"));
+        if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
+            target.setText(chooser.getSelectedFile().getAbsolutePath());
+        }
     }
 
     private JPanel buildDisplayTab() {
@@ -365,7 +458,85 @@ public class SettingsDialog extends JDialog {
         customBgBrowse.addActionListener(e -> chooseBackgroundImage());
         bgRow.add(customBgBrowse, BorderLayout.EAST);
         panel.add(bgRow, gbc);
+
+        // ---- Live dashboard preview (#15) ----
+        gbc.gridy = 7; gbc.gridx = 0; gbc.gridwidth = 2;
+        panel.add(new JLabel("Live preview (theme, background, mosque name):"), gbc);
+        gbc.gridwidth = 1;
+        gbc.gridy = 8; gbc.gridx = 0; gbc.gridwidth = 2;
+        previewScreen.setPreferredSize(new Dimension(340, 192));
+        previewScreen.setMosqueName(mosqueField.getText());
+        previewScreen.applyTheme((String) themeCombo.getSelectedItem());
+        seedPreviewWithPrayerData(); // realistic dashboard content
+        themeCombo.addActionListener(e -> previewScreen.applyTheme(
+                (String) themeCombo.getSelectedItem()));
+        customBgField.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
+            @Override public void insertUpdate(javax.swing.event.DocumentEvent e) { refreshPreview(); }
+            @Override public void removeUpdate(javax.swing.event.DocumentEvent e) { refreshPreview(); }
+            @Override public void changedUpdate(javax.swing.event.DocumentEvent e) { refreshPreview(); }
+        });
+        mosqueField.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
+            @Override public void insertUpdate(javax.swing.event.DocumentEvent e) {
+                previewScreen.setMosqueName(mosqueField.getText());
+            }
+            @Override public void removeUpdate(javax.swing.event.DocumentEvent e) {
+                previewScreen.setMosqueName(mosqueField.getText());
+            }
+            @Override public void changedUpdate(javax.swing.event.DocumentEvent e) {
+                previewScreen.setMosqueName(mosqueField.getText());
+            }
+        });
+        panel.add(previewScreen, gbc);
         return panel;
+    }
+
+    /**
+     * Fills the mini dashboard with today's real times (computed from the
+     * live settings) so the preview mirrors what the kiosk actually shows.
+     */
+    private void seedPreviewWithPrayerData() {
+        try {
+            AppSettings s = liveSettings != null ? liveSettings : new AppSettings();
+            var loc = s.getLocation();
+            double lat = loc != null ? loc.getLatitude() : 33.5731;
+            double lon = loc != null ? loc.getLongitude() : -7.5898;
+            double tz = com.tawkit.service.prayer.PrayerScheduler.resolveTimezone(loc);
+            var raw = new com.tawkit.service.prayer.PrayerTimeCalculator().compute(
+                    java.time.LocalDate.now(), lat, lon, tz,
+                    s.getCalculationMethod(), s.getAsrMethod());
+            var day = new com.tawkit.model.prayer.DailyPrayerTimes(java.time.LocalDate.now());
+            for (PrayerType type : PrayerType.values()) {
+                if (raw.get(type) != null) {
+                    day.put(type, new com.tawkit.model.prayer.PrayerEntry(
+                            type, raw.get(type), null));
+                }
+            }
+            previewScreen.setPrayerTimes(day);
+            previewScreen.setClockMode(s.isUse24HourClock(), s.isShowSeconds());
+            var h = new com.tawkit.service.prayer.HijriCalendarService()
+                    .toHijri(java.time.LocalDate.now());
+            previewScreen.setDate(java.time.LocalDate.now(),
+                    h.getDay(), h.getMonth(), h.getYear());
+            previewScreen.setCountdown("--:--", "Next Prayer", 0.4);
+        } catch (Exception e) {
+            com.tawkit.infrastructure.Log.warn("Preview seeding failed: " + e.getMessage());
+        }
+    }
+
+    /** Applies the custom background (or theme) to the mini preview (#15). */
+    private void refreshPreview() {
+        if (previewUpdating) return;
+        previewUpdating = true;
+        try {
+            String path = customBgField.getText().trim();
+            if ("custom".equals(themeCombo.getSelectedItem()) && !path.isEmpty()) {
+                previewScreen.applyCustomImage(path);
+            } else {
+                previewScreen.applyTheme((String) themeCombo.getSelectedItem());
+            }
+        } finally {
+            previewUpdating = false;
+        }
     }
 
     private void chooseBackgroundImage() {
@@ -373,6 +544,7 @@ public class SettingsDialog extends JDialog {
         chooser.setFileFilter(new FileNameExtensionFilter("Images", "jpg", "jpeg", "png"));
         if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
             customBgField.setText(chooser.getSelectedFile().getAbsolutePath());
+            themeCombo.setSelectedItem("custom");
         }
     }
 
@@ -540,6 +712,13 @@ public class SettingsDialog extends JDialog {
         volumeSlider.setValue((int) Math.round(settings.getAudioVolume() * 100));
         preFajrAlertCheck.setSelected(settings.isPreFajrAlertEnabled());
         preFajrMinutes.setValue(settings.getPreFajrAlertMinutes());
+        for (PrayerType type : IQAMA_PRAYERS) {
+            adhanFileFields.get(type).setText(settings.getAdhanSoundFile(type)); // #6
+        }
+
+        jumuaCheck.setSelected(settings.isJumuaEnabled()); // #5
+        jumuaKhutbaField.setText(settings.getJumuaKhutbaTime() != null
+                ? settings.getJumuaKhutbaTime().toString() : "12:45");
 
         languageCombo.setSelectedItem(settings.getLanguage());
         clock24Check.setSelected(settings.isUse24HourClock());
@@ -602,6 +781,16 @@ public class SettingsDialog extends JDialog {
         settings.setAudioVolume(volumeSlider.getValue() / 100.0);
         settings.setPreFajrAlertEnabled(preFajrAlertCheck.isSelected());
         settings.setPreFajrAlertMinutes((Integer) preFajrMinutes.getValue());
+        for (PrayerType type : IQAMA_PRAYERS) {
+            settings.setAdhanSoundFile(type, adhanFileFields.get(type).getText().trim()); // #6
+        }
+
+        settings.setJumuaEnabled(jumuaCheck.isSelected()); // #5
+        try {
+            String kt = jumuaKhutbaField.getText().trim();
+            if (!kt.isBlank()) settings.setJumuaKhutbaTime(LocalTime.parse(kt));
+        } catch (DateTimeParseException ignored) {
+        }
 
         settings.setLanguage((String) languageCombo.getSelectedItem());
         settings.setUse24HourClock(clock24Check.isSelected());

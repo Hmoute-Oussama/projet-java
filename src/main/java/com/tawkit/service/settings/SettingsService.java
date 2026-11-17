@@ -46,7 +46,8 @@ public class SettingsService {
                 props.load(new java.io.InputStreamReader(in, StandardCharsets.UTF_8));
                 apply(settings, props);
             } catch (IOException e) {
-                System.err.println("[Settings] load failed: " + e.getMessage());
+                com.tawkit.infrastructure.Log.warn("Settings load failed ("
+                        + e.getMessage() + ")");
             }
         }
         return settings;
@@ -61,7 +62,7 @@ public class SettingsService {
                         "Tawkit Desktop settings");
             }
         } catch (IOException e) {
-            System.err.println("[Settings] save failed: " + e.getMessage());
+            com.tawkit.infrastructure.Log.warn("Settings save failed (" + e.getMessage() + ")");
         }
     }
 
@@ -128,6 +129,14 @@ public class SettingsService {
         p.setProperty("backgroundTheme", nz(s.getBackgroundTheme()));
         p.setProperty("customBackgroundPath", nz(s.getCustomBackgroundPath()));
 
+        for (PrayerType type : s.getAdhanSoundFiles().keySet()) {
+            p.setProperty("adhanSound." + type.name(), nz(s.getAdhanSoundFile(type)));
+        }
+        p.setProperty("jumuaEnabled", String.valueOf(s.isJumuaEnabled()));
+        if (s.getJumuaKhutbaTime() != null) {
+            p.setProperty("jumuaKhutbaTime", s.getJumuaKhutbaTime().toString());
+        }
+
         putList(p, "announcement", s.getAnnouncements());
         putList(p, "reminder", s.getReminders());
         return p;
@@ -187,6 +196,16 @@ public class SettingsService {
         s.setPreFajrAlertMinutes(intVal(p, "preFajrAlertMinutes", 10));
         s.setBackgroundTheme(p.getProperty("backgroundTheme", "night"));
         s.setCustomBackgroundPath(p.getProperty("customBackgroundPath", ""));
+
+        for (PrayerType type : PrayerType.values()) {
+            s.setAdhanSoundFile(type, p.getProperty("adhanSound." + type.name(), ""));
+        }
+        s.setJumuaEnabled(Boolean.parseBoolean(p.getProperty("jumuaEnabled", "true")));
+        try {
+            String kt = p.getProperty("jumuaKhutbaTime", "");
+            if (!kt.isBlank()) s.setJumuaKhutbaTime(java.time.LocalTime.parse(kt));
+        } catch (Exception ignored) {
+        }
 
         s.setAnnouncements(readList(p, "announcement"));
         s.setReminders(readList(p, "reminder"));

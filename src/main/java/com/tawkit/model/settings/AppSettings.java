@@ -4,6 +4,7 @@ import com.tawkit.model.prayer.AsrMethod;
 import com.tawkit.model.prayer.CalculationMethod;
 import com.tawkit.model.prayer.IqamaSettings;
 import com.tawkit.model.prayer.Location;
+import com.tawkit.model.prayer.PrayerType;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -38,6 +39,13 @@ public class AppSettings {
     private double audioVolume = 1.0;
     private boolean preFajrAlertEnabled = true;
     private int preFajrAlertMinutes = 10;
+
+    /** Custom adhan WAV file per prayer (empty = bundled default). Change #6. */
+    private final java.util.Map<PrayerType, String> adhanSoundFiles = new java.util.EnumMap<>(PrayerType.class);
+
+    // ---- Jumu'a (Friday) mode — change #5 ----
+    private boolean jumuaEnabled = true;
+    private java.time.LocalTime jumuaKhutbaTime = java.time.LocalTime.of(12, 45);
 
     // ---- background: "night" | "green" | "gradient-blue" | "custom" ----
     private String backgroundTheme = "night";
@@ -251,5 +259,43 @@ public class AppSettings {
 
     public void setReminders(List<String> reminders) {
         this.reminders = reminders != null ? new ArrayList<>(reminders) : new ArrayList<>();
+    }
+
+    // ------------------------------------------------------------ audio files (#6)
+
+    /** Custom adhan WAV path for the prayer, or "" when using the bundled one. */
+    public String getAdhanSoundFile(PrayerType type) {
+        return adhanSoundFiles.getOrDefault(type, "");
+    }
+
+    public void setAdhanSoundFile(PrayerType type, String path) {
+        if (path == null || path.isBlank()) {
+            adhanSoundFiles.remove(type);
+        } else {
+            adhanSoundFiles.put(type, path.trim());
+        }
+    }
+
+    public java.util.Map<PrayerType, String> getAdhanSoundFiles() {
+        return java.util.Collections.unmodifiableMap(adhanSoundFiles);
+    }
+
+    // ------------------------------------------------------------ Jumu'a (#5)
+
+    public boolean isJumuaEnabled() {
+        return jumuaEnabled;
+    }
+
+    public void setJumuaEnabled(boolean jumuaEnabled) {
+        this.jumuaEnabled = jumuaEnabled;
+    }
+
+    /** Fixed khutba time shown/used on Fridays instead of the Dhuhr iqama. */
+    public java.time.LocalTime getJumuaKhutbaTime() {
+        return jumuaKhutbaTime;
+    }
+
+    public void setJumuaKhutbaTime(java.time.LocalTime time) {
+        if (time != null) this.jumuaKhutbaTime = time;
     }
 }

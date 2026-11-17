@@ -15,6 +15,7 @@ import com.tawkit.view.render.HeaderLeftElement;
 import com.tawkit.view.render.MosqueNameElement;
 import com.tawkit.view.render.PrayerScheduleElement;
 import com.tawkit.view.render.RenderContext;
+import com.tawkit.view.render.VerseOfDayElement;
 
 import javax.swing.JComponent;
 import javax.swing.Timer;
@@ -57,15 +58,18 @@ public class TawkitScreen extends JComponent {
     private final CountdownElement countdown = new CountdownElement();
     private final CalligraphyElement calligraphy = new CalligraphyElement();
     private final PrayerScheduleElement schedule = new PrayerScheduleElement();
+    private final VerseOfDayElement verseOfDay = new VerseOfDayElement();
     private final FooterElement footer = new FooterElement();
 
     private final List<DashboardElement> elements = List.of(
             background, headerLeft, dateHeader, emblem, mosqueName,
-            clock, countdown, calligraphy, schedule, footer);
+            clock, countdown, calligraphy, schedule, verseOfDay, footer);
 
     private Runnable onMenuClick;
     private final Timer secondTimer;
     private final Timer rotationTimer;
+    private final Timer fadeTimer;
+    private float contentAlpha = 1f;      // fade for calligraphy/footer (#14)
 
     public TawkitScreen() {
         setOpaque(true);
@@ -73,6 +77,8 @@ public class TawkitScreen extends JComponent {
         secondTimer.start();
         rotationTimer = new Timer(18_000, e -> advanceContent());
         rotationTimer.start();
+        fadeTimer = new Timer(30, e -> fadeStep()); // smooth transitions (#14)
+        fadeTimer.setRepeats(true);
 
         addMouseListener(new MouseAdapter() {
             @Override
@@ -83,6 +89,13 @@ public class TawkitScreen extends JComponent {
                 }
             }
         });
+    }
+
+    /** Stops the repaint timers (for previews inside dialogs that get closed). */
+    public void stop() {
+        secondTimer.stop();
+        rotationTimer.stop();
+        fadeTimer.stop();
     }
 
     public void setOnMenuClick(Runnable r) {
@@ -153,6 +166,12 @@ public class TawkitScreen extends JComponent {
         repaint();
     }
 
+    /** Sets the daily fixed verse shown in the corner widget (#8). */
+    public void setVerseOfDay(com.tawkit.model.content.ContentItem verse) {
+        verseOfDay.setVerse(verse);
+        repaint();
+    }
+
     public void applyTheme(String theme) {
         background.setTheme(theme);
         repaint();
@@ -175,6 +194,13 @@ public class TawkitScreen extends JComponent {
 
         RenderContext ctx = context();
         for (DashboardElement element : elements) {
+            // Content elements fade on rotation (#14); everything else paints solid
+            if (element == calligraphy || element == verseOfDay || element == footer) {
+                g2.setComposite(java.awt.AlphaComposite.SrcOver.derive(
+                        Math.max(0f, Math.min(1f, contentAlpha))));
+            } else {
+                g2.setComposite(java.awt.AlphaComposite.SrcOver);
+            }
             element.render(g2, ctx);
         }
         g2.dispose();
@@ -183,7 +209,22 @@ public class TawkitScreen extends JComponent {
     private void advanceContent() {
         boolean any = calligraphy.advance();
         any |= footer.advance();
-        if (any) repaint();
+        if (any) startFade(); // fade in the new verse/footer (#14)
+    }
+
+    /** Fade transition: quick ramp 0 → 1 for the rotating content. */
+    private void startFade() {
+        contentAlpha = 0f;
+        fadeTimer.start();
+    }
+
+    private void fadeStep() {
+        contentAlpha = Math.min(1f, contentAlpha + 0.06f);
+        if (contentAlpha >= 1f) {
+            contentAlpha = 1f;
+            fadeTimer.stop();
+        }
+        repaint();
     }
 
     private RenderContext context() {
