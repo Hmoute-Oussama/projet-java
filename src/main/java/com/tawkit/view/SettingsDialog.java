@@ -358,6 +358,7 @@ public class SettingsDialog extends JDialog {
         chooser.setFileFilter(new FileNameExtensionFilter("Images", "jpg", "jpeg", "png"));
         if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
             customBgField.setText(chooser.getSelectedFile().getAbsolutePath());
+            themeCombo.setSelectedItem("custom");
         }
     }
 
