@@ -211,28 +211,34 @@ public class MainFrame extends JFrame {
         screen.setWeatherState(com.tawkit.view.render.HeaderLeftElement.WeatherState.ERROR);
     }
 
+    private WeatherMenu openMenu; // currently shown ☰ popup (hidden before actions run)
+
     /** Popup menu from the ☰ button: weather/location + app entries. */
     private void showMainMenu() {
-        WeatherMenu menu = new WeatherMenu(locationLabel, temperatureUnit,
+        openMenu = new WeatherMenu(locationLabel, temperatureUnit,
                 weatherUpdatedLabel, new WeatherMenu.Actions() {
-                    @Override public void useMyLocation() {
-                        if (headerActions != null) headerActions.useMyLocation();
+                    @Override public void useMyLocation() { dispatch(headerActions != null ? headerActions::useMyLocation : () -> {}); }
+                    @Override public void searchCity() { dispatch(headerActions != null ? headerActions::searchCity : () -> {}); }
+                    @Override public void refreshWeather() { dispatch(headerActions != null ? headerActions::refreshWeather : () -> {}); }
+                    @Override public void toggleTemperatureUnit() { dispatch(headerActions != null ? headerActions::toggleTemperatureUnit : () -> {}); }
+                    @Override public void openSettings() { dispatch(MainFrame.this::openSettings); }
+                    @Override public void openMonthly() { dispatch(MainFrame.this::openMonthly); }
+                    @Override public void toggleFullScreen() { dispatch(MainFrame.this::toggleFullScreen); }
+                    @Override public void quit() { dispatch(() -> System.exit(0)); }
+
+                    /**
+                     * Hides the popup BEFORE running the action. Opening a
+                     * modal dialog while the popup still holds its input
+                     * grab deadlocks the EDT — the dialog then appears
+                     * frozen ("settings does not work").
+                     */
+                    private void dispatch(Runnable action) {
+                        openMenu.setVisible(false);
+                        openMenu = null;
+                        javax.swing.SwingUtilities.invokeLater(action);
                     }
-                    @Override public void searchCity() {
-                        if (headerActions != null) headerActions.searchCity();
-                    }
-                    @Override public void refreshWeather() {
-                        if (headerActions != null) headerActions.refreshWeather();
-                    }
-                    @Override public void toggleTemperatureUnit() {
-                        if (headerActions != null) headerActions.toggleTemperatureUnit();
-                    }
-                    @Override public void openSettings() { openSettings(); }
-                    @Override public void openMonthly() { openMonthly(); }
-                    @Override public void toggleFullScreen() { toggleFullScreen(); }
-                    @Override public void quit() { System.exit(0); }
                 });
-        menu.show(this, 40, 40);
+        openMenu.show(this, 40, 40);
     }
 
     public void openMonthly() {
