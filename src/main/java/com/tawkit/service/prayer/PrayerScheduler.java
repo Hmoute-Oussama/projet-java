@@ -106,7 +106,9 @@ public class PrayerScheduler {
 
     /** Recomputes times from settings (called after settings change). */
     public void recompute() {
-        LocalDate now = LocalDate.now();
+        // Prayer dates belong to the selected location, not the computer's
+        // default timezone.
+        LocalDate now = LocalDate.now(locationZoneOffset());
         this.today = computeDay(now);
         this.tomorrow = computeDay(now.plusDays(1));
         this.pendingPrayer = null;
@@ -149,21 +151,33 @@ public class PrayerScheduler {
 
     /** Location timezone if set, otherwise the system default offset. */
     static double resolveTimezone(Location loc) {
-        if (loc != null && loc.getTimezone() != 0.0) return loc.getTimezone();
+        // UTC (0.0) is a valid city offset; only a missing location should
+        // fall back to the computer's timezone.
+        if (loc != null) return loc.getTimezone();
         ZoneId zone = ZoneId.systemDefault();
         return ZoneOffset.from(zone.getRules().getOffset(Instant.now())).getTotalSeconds() / 3600.0;
+    }
+
+    /** Fixed UTC offset supplied by the selected city database. */
+    private ZoneOffset locationZoneOffset() {
+        int totalSeconds = (int) Math.round(resolveTimezone(settings.getLocation()) * 3600.0);
+        return ZoneOffset.ofTotalSeconds(totalSeconds);
+    }
+
+    private LocalTime locationLocalTime() {
+        return LocalTime.now(locationZoneOffset());
     }
 
     // ------------------------------------------------------------- ticking
 
     private void tick() {
-        LocalDate nowDate = LocalDate.now();
+        LocalDate nowDate = LocalDate.now(locationZoneOffset());
         if (!nowDate.equals(today.getDate())) {
             recompute();
             if (listener != null) listener.onDayChanged(nowDate);
         }
 
-        LocalTime now = LocalTime.now();
+        LocalTime now = locationLocalTime();
         evaluate(now);
         if (listener != null) listener.onTick(snapshot());
     }
@@ -260,7 +274,7 @@ public class PrayerScheduler {
     }
 
     private TickSnapshot snapshot() {
-        LocalTime now = LocalTime.now();
+        LocalTime now = locationLocalTime();
         LocalTime nextAdhan = null;
         LocalTime nextIqama = null;
         long toAdhan = -1;
@@ -285,7 +299,7 @@ public class PrayerScheduler {
             toIqama = Math.max(0, secondsBetween(now, pendingIqamaTime));
         }
 
-        return new TickSnapshot(LocalDate.now(),
+        return new TickSnapshot(LocalDate.now(locationZoneOffset()),
                 next != null ? next.type() : null,
                 nextAdhan, nextIqama, toAdhan, toIqama, state, pendingPrayer);
     }

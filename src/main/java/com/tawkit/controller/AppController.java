@@ -101,8 +101,11 @@ public class AppController implements PrayerScheduler.Listener, WeatherService.L
         var loc = settings.getLocation();
         if (loc != null) {
             frame.setCityInfo(loc.getName(), loc.getLatitude(), loc.getLongitude());
+            frame.setLocationTimezone(loc.getTimezone());
         } else {
             frame.setCityInfo("", 0, 0);
+            frame.setLocationTimezone(java.time.ZoneId.systemDefault()
+                    .getRules().getOffset(java.time.Instant.now()).getTotalSeconds() / 3600.0);
         }
         frame.setUse24Hour(settings.isUse24HourClock());
         frame.setShowSeconds(settings.isShowSeconds());

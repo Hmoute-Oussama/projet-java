@@ -123,6 +123,12 @@ public class TawkitScreen extends JComponent {
         repaint();
     }
 
+    /** Updates the large dashboard clock to the selected city timezone. */
+    public void setLocationTimezone(double timezoneHours) {
+        clock.setLocationTimezone(timezoneHours);
+        repaint();
+    }
+
     public void setCountdown(String digits, String label, double progress) {
         countdown.setCountdown(digits, label);
         repaint();

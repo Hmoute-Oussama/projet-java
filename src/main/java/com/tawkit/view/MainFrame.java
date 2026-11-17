@@ -159,6 +159,11 @@ public class MainFrame extends JFrame {
         screen.setCityInfo(cityName, latitude, longitude);
     }
 
+    /** Sets the timezone used by the large main clock. */
+    public void setLocationTimezone(double timezoneHours) {
+        screen.setLocationTimezone(timezoneHours);
+    }
+
     private boolean use24HourFlag = false;
     private boolean secondsFlag = true;
 

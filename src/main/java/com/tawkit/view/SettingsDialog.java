@@ -121,16 +121,24 @@ public class SettingsDialog extends JDialog {
         for (String country : cityService.getCountries()) {
             countryCombo.addItem(country);
         }
+        // A country change refreshes its cities; a city change updates the
+        // coordinates and UTC offset immediately.
         countryCombo.addActionListener(e -> refreshCityCombo());
+        cityCombo.addActionListener(e -> updateLocationFromCity());
     }
 
     private void refreshCityCombo() {
         cityCombo.removeAllItems();
         String country = (String) countryCombo.getSelectedItem();
         if (country == null) return;
+
         for (String city : cityService.getCitiesOf(country)) {
             cityCombo.addItem(city);
         }
+
+        // JComboBox selects the first city automatically. Explicitly update
+        // once as well, including the case where the list is empty.
+        updateLocationFromCity();
     }
 
     // ---------------------------------------------------------------- tabs
@@ -182,15 +190,22 @@ public class SettingsDialog extends JDialog {
     }
 
     private void applySelectedCity() {
+        // Kept for the existing button; city selection now updates these
+        // fields automatically, so this action is also safe to repeat.
+        updateLocationFromCity();
+    }
+
+    private void updateLocationFromCity() {
         String country = (String) countryCombo.getSelectedItem();
         String city = (String) cityCombo.getSelectedItem();
         if (country == null || city == null) return;
+
         CityService.City found = cityService.find(country, city);
-        if (found != null) {
-            latField.setText(String.valueOf(found.latitude()));
-            lonField.setText(String.valueOf(found.longitude()));
-            timezoneField.setText(String.valueOf(found.timezone()));
-        }
+        if (found == null) return;
+
+        latField.setText(Double.toString(found.latitude()));
+        lonField.setText(Double.toString(found.longitude()));
+        timezoneField.setText(Double.toString(found.timezone()));
     }
 
     private JPanel buildPrayerTab() {
