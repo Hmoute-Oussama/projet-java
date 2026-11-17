@@ -40,13 +40,12 @@ public class Main {
             AppController controller = new AppController(frame);
 
             frame.setSettingsOpener(() -> {
-                SettingsDialog dialog = new SettingsDialog(frame);
+                // Live settings passed in: Apply/Save push changes immediately
+                SettingsDialog dialog = new SettingsDialog(frame, controller.getSettings());
                 dialog.loadFromSettings(controller.getSettings());
+                dialog.setOnApply(controller::settingsChanged);
                 dialog.setVisible(true);
-                if (dialog.isSaved()) {
-                    dialog.applyToSettings(controller.getSettings());
-                    controller.settingsChanged();
-                }
+                // Changes are applied through onApply; no post-dialog work needed
             });
 
             // Monthly prayer-times dialog (#1)

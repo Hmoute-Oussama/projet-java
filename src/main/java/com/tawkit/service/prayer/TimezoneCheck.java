@@ -44,7 +44,7 @@ public final class TimezoneCheck {
         }
         // A stored timezone that is "close" to the longitude guess is kept as-is
         double stored = location.getTimezone();
-        if (stored != 0.0 && Math.abs(stored - lon / 15.0) <= 1.25) {
+        if (stored != 0.0 && Math.abs(stored - lon / 15.0) <= 2.0) {
             return stored;
         }
         return guess;

@@ -91,6 +91,13 @@ public class TawkitScreen extends JComponent {
         });
     }
 
+    /** Stops the repaint timers (for previews inside dialogs that get closed). */
+    public void stop() {
+        secondTimer.stop();
+        rotationTimer.stop();
+        fadeTimer.stop();
+    }
+
     public void setOnMenuClick(Runnable r) {
         this.onMenuClick = r;
     }

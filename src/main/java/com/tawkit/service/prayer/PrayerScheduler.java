@@ -158,8 +158,8 @@ public class PrayerScheduler {
      */
     public static double resolveTimezone(Location loc) {
         if (loc != null && loc.getTimezone() != 0.0
-                && Math.abs(loc.getTimezone() - loc.getLongitude() / 15.0) <= 1.25) {
-            return loc.getTimezone(); // stored offset is sane, keep it
+                && Math.abs(loc.getTimezone() - loc.getLongitude() / 15.0) <= 2.0) {
+            return loc.getTimezone(); // user-set offset is plausible, respect it
         }
         return TimezoneCheck.resolve(loc, LocalDate.now());
     }

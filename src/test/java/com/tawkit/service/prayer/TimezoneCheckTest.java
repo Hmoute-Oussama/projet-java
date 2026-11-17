@@ -22,13 +22,21 @@ class TimezoneCheckTest {
 
     @Test
     void bogusOffsetIsCorrectedFromLongitude() {
-        // Someone typed +1 for Casablanca (real: +1 / DST +0) — longitude says ~-0.4h
-        Location bogus = new Location("Casablanca", "Morocco", 33.5731, -7.5898, 1.0);
+        // Someone typed +5 for Casablanca (real: +1) — far off the longitude
+        // expectation (~-0.5h), so it must be corrected automatically
+        Location bogus = new Location("Casablanca", "Morocco", 33.5731, -7.5898, 5.0);
         double resolved = TimezoneCheck.resolve(bogus, LocalDate.of(2026, 1, 1));
-        // Morocco is UTC+1 year-round since 2018 (with Ramadan exception), so either
-        // 0.0 or 1.0 is defensible — but never a 5-hour error
         assertTrue(resolved >= -1.0 && resolved <= 1.5,
                 "Casablanca offset must be ~0..1, was " + resolved);
+    }
+
+    @Test
+    void plausibleUserOffsetIsRespectedEvenIfDSTShifted() {
+        // France in summer: lon 2.35 → solar ~0.16h, but Europe/Paris is +2.
+        // A manually entered +2 is plausible (within 2h of the solar guess)
+        // and must be respected, not overridden.
+        Location paris = new Location("Paris", "France", 48.85, 2.35, 2.0);
+        assertEquals(2.0, TimezoneCheck.resolve(paris, LocalDate.of(2026, 7, 1)), 0.001);
     }
 
     @Test

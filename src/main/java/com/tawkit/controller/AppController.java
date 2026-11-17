@@ -107,6 +107,9 @@ public class AppController implements PrayerScheduler.Listener, WeatherService.L
         if (settings.isWeatherEnabled() && settings.getLocation() != null) {
             weatherService.refreshAsync(settings.getLocation().getLatitude(),
                     settings.getLocation().getLongitude());
+        } else {
+            // Weather turned off (or no location): clear the stale display
+            frame.setWeather(null);
         }
     }
 
