@@ -51,7 +51,10 @@ public final class TawkitTheme {
             if (in != null) {
                 return Font.createFont(Font.TRUETYPE_FONT, in);
             }
-        } catch (Exception ignored) {
+            com.tawkit.infrastructure.Log.warn("Bundled font missing: " + resource);
+        } catch (Exception e) {
+            com.tawkit.infrastructure.Log.warn("Font not loaded: " + resource
+                    + " (" + e.getMessage() + ")");
         }
         return null;
     }

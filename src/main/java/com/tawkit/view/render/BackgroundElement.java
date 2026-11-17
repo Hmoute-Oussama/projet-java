@@ -46,14 +46,13 @@ public final class BackgroundElement implements DashboardElement {
         customImage = null;
         if (path == null || path.isBlank()) return;
         try {
-            BufferedImage image = ImageIO.read(new File(path));
-            if (image != null) {
-                customImage = image;
-            } else {
-                System.err.println("[Background] unsupported image " + path);
+            customImage = ImageIO.read(new File(path));
+            if (customImage == null) {
+                com.tawkit.infrastructure.Log.warn("Background not an image: " + path);
             }
         } catch (Exception e) {
-            System.err.println("[Background] cannot load " + path);
+            com.tawkit.infrastructure.Log.warn("Cannot load background " + path
+                    + " (" + e.getMessage() + ")");
         }
     }
 
@@ -81,7 +80,10 @@ public final class BackgroundElement implements DashboardElement {
         if (bundledImage == null) {
             try (var in = getClass().getResourceAsStream(BUNDLED_RESOURCE)) {
                 if (in != null) bundledImage = ImageIO.read(in);
-            } catch (Exception ignored) {
+                else com.tawkit.infrastructure.Log.warn("Bundled background missing: " + BUNDLED_RESOURCE);
+            } catch (Exception e) {
+                com.tawkit.infrastructure.Log.warn("Bundled background unreadable ("
+                        + e.getMessage() + ")");
             }
         }
         return bundledImage;

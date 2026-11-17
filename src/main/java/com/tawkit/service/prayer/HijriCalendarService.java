@@ -4,6 +4,8 @@ import com.tawkit.model.common.HijriDate;
 import com.tawkit.model.common.HijriMonthNames;
 
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 
 /**
@@ -71,6 +73,56 @@ public final class HijriCalendarService {
             default:
                 return false;
         }
+    }
+
+    // -------------------------------------------------- Hijri events (#9)
+
+    /** A recurring Hijri event and the Hijri (month, day) it falls on. */
+    public record HijriEvent(String name, int month, int day) {
+    }
+
+    /** The major Islamic events tracked for ticker highlights. */
+    public static final List<HijriEvent> EVENTS = List.of(
+            new HijriEvent("1 Ramadan", 9, 1),
+            new HijriEvent("Eid al-Fitr", 10, 1),
+            new HijriEvent("Arafah", 12, 9),
+            new HijriEvent("Eid al-Adha", 12, 10),
+            new HijriEvent("Islamic New Year", 1, 1),
+            new HijriEvent("Ashura", 1, 10),
+            new HijriEvent("Mawlid an-Nabi", 3, 12)
+    );
+
+    /**
+     * Days from {@code today} until the next occurrence of the given Hijri
+     * (month, day); 0 when it is today. Negative never happens — it always
+     * looks forward to next year if the date passed.
+     */
+    public long daysUntil(LocalDate today, int hijriMonth, int hijriDay) {
+        int todayJdn = gregorianToJdn(today.getYear(), today.getMonthValue(), today.getDayOfMonth());
+        HijriDate todayH = toHijri(today);
+        int targetJdn = islamicToJdn(todayH.getYear(), hijriMonth, hijriDay);
+        if (targetJdn < todayJdn) {
+            targetJdn = islamicToJdn(todayH.getYear() + 1, hijriMonth, hijriDay);
+        }
+        return targetJdn - todayJdn;
+    }
+
+    /**
+     * Highlight lines for the ticker: every major event within
+     * {@code withinDays} (inclusive), phrased "Eid al-Adha in 12 days".
+     * The event happening today is phrased "— today!".
+     */
+    public List<String> upcomingEventMessages(LocalDate today, long withinDays) {
+        List<String> out = new ArrayList<>();
+        for (HijriEvent event : EVENTS) {
+            long days = daysUntil(today, event.month(), event.day());
+            if (days == 0) {
+                out.add(event.name() + " — today!");
+            } else if (days > 0 && days <= withinDays) {
+                out.add(event.name() + " in " + days + " day" + (days == 1 ? "" : "s"));
+            }
+        }
+        return out;
     }
 
     // ------------------------------------------------ tabular algorithms

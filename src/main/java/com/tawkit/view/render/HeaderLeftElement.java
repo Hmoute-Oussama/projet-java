@@ -57,6 +57,7 @@ public final class HeaderLeftElement implements DashboardElement {
     public void setWeather(WeatherData data) {
         if (data == null) {
             hasWeather = false;
+            tempText = "--°"; // clear stale temperature when weather is disabled
         } else {
             hasWeather = true;
             tempText = Math.round(data.getCurrentTemp()) + "°";

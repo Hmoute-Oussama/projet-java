@@ -97,12 +97,12 @@ public final class PrayerTimeCalculator {
     // ---------------------------------------------------------------- core
 
     private double midDay(double t, double jDate) {
-        double eqt = sunPosition(jDate + t).equationOfTime;
+        double eqt = sunPosition(jDate + t / 24.0).equationOfTime;
         return fixHour(12.0 - eqt);
     }
 
     private double sunAngleTime(double angle, double t, double lat, double jDate, boolean beforeNoon) {
-        SunPosition pos = sunPosition(jDate + t);
+        SunPosition pos = sunPosition(jDate + t / 24.0);
         double decl = pos.declination;
         double noon = fixHour(12.0 - pos.equationOfTime);
         double cosH = (-sin(angle) - sin(decl) * sin(lat)) / (cos(decl) * cos(lat));
@@ -112,7 +112,7 @@ public final class PrayerTimeCalculator {
     }
 
     private double asrTime(double shadowFactor, double t, double lat, double jDate) {
-        double decl = sunPosition(jDate + t).declination;
+        double decl = sunPosition(jDate + t / 24.0).declination;
         double angle = -arcCot(shadowFactor + tan(abs(lat - decl)));
         return sunAngleTime(angle, t, lat, jDate, false);
     }
