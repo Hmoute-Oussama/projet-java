@@ -43,6 +43,9 @@ public class AppController implements PrayerScheduler.Listener, WeatherService.L
     private PrayerScheduler scheduler;
     private boolean showingAzkar = false;
     private boolean preFajrAlertFired = false;
+    private boolean jumuaAlertFired = false;
+    private final com.tawkit.service.location.GeoLocationService geoLocation =
+            new com.tawkit.service.location.GeoLocationService();
 
     /**
      * Composition root: all services are created here and injected through
@@ -76,6 +79,20 @@ public class AppController implements PrayerScheduler.Listener, WeatherService.L
         if (settings.isWeatherEnabled() && settings.getLocation() != null) {
             weatherService.refreshAsync(settings.getLocation().getLatitude(),
                     settings.getLocation().getLongitude());
+        }
+
+        // Auto-location on first launch (#7): no city configured yet → IP lookup
+        if (settings.getLocation() == null) {
+            geoLocation.lookupAsync(
+                    loc -> {
+                        settings.setLocation(loc);
+                        settingsService.save(settings);
+                        settingsChanged();
+                        com.tawkit.infrastructure.Log.info("Auto-location: "
+                                + loc.getDisplayName() + " (" + loc.getLatitude() + ", "
+                                + loc.getLongitude() + ")");
+                    },
+                    msg -> com.tawkit.infrastructure.Log.warn("Auto-location skipped: " + msg));
         }
     }
 
@@ -122,9 +139,13 @@ public class AppController implements PrayerScheduler.Listener, WeatherService.L
         frame.setContentItems(buildDefaultContent());
         frame.setRotationSeconds(settings.getContentRotationSeconds());
         frame.setSlides(settings.isSlidesEnabled() ? content.getSlides() : List.of());
+        frame.setVerseOfDay(content.getVerseOfDay(LocalDate.now()));
 
         audio.setEnabled(settings.isAdhanEnabled());
         audio.setVolume(settings.getAudioVolume());
+        for (var type : com.tawkit.model.prayer.PrayerType.values()) {
+            audio.setCustomAdhanFile(type, settings.getAdhanSoundFile(type)); // #6
+        }
         reminders.setRules(settings.getReminders());
     }
 
@@ -143,8 +164,16 @@ public class AppController implements PrayerScheduler.Listener, WeatherService.L
         if (daysToRamadan > 0 && daysToRamadan < 60) {
             msgs.add("Ramadan starts in " + daysToRamadan + " day(s)");
         }
+        // Hijri event highlights (#9) — Ramadan/Eids/Ashura/Mawlid etc.
+        msgs.addAll(hijri.upcomingEventMessages(LocalDate.now(), 30));
         if (HijriCalendarService.isFastingDay(LocalDate.now())) {
             msgs.add("Fasting day: Monday / Thursday");
+        }
+        // Jumu'a reminder (#5)
+        if (settings.isJumuaEnabled() && LocalDate.now().getDayOfWeek() == java.time.DayOfWeek.FRIDAY) {
+            if (settings.getJumuaKhutbaTime() != null) {
+                msgs.add("Jumu'a today — khutba at " + settings.getJumuaKhutbaTime());
+            }
         }
         return msgs;
     }
@@ -206,6 +235,19 @@ public class AppController implements PrayerScheduler.Listener, WeatherService.L
             }
         }
 
+        // Built-in Jumu'a reminder (#5): alert 30 min before the khutba on Fridays
+        if (settings.isJumuaEnabled() && snapshot.date.getDayOfWeek() == java.time.DayOfWeek.FRIDAY
+                && snapshot.nextPrayer == PrayerType.DHUHR && snapshot.secondsToNextAdhan >= 0) {
+            if (snapshot.secondsToNextAdhan <= 30 * 60L && snapshot.secondsToNextAdhan > 29 * 60L
+                    && !jumuaAlertFired) {
+                jumuaAlertFired = true;
+                frame.showAlertMessage("Jumu'a in " + snapshot.secondsToNextAdhan / 60 + " minutes");
+                audio.playAlert();
+            } else if (snapshot.secondsToNextAdhan > 35 * 60L) {
+                jumuaAlertFired = false;
+            }
+        }
+
         // Restore default content once the praying window is over
         if (snapshot.state == PrayerScheduler.State.TO_ADHAN && showingAzkar) {
             showingAzkar = false;
@@ -234,6 +276,7 @@ public class AppController implements PrayerScheduler.Listener, WeatherService.L
     @Override
     public void onDayChanged(LocalDate newDay) {
         updateDates();
+        frame.setVerseOfDay(content.getVerseOfDay(newDay)); // #8 — daily verse
         frame.setTickerMessages(buildTickerMessages());
         if (settings.isWeatherEnabled() && settings.getLocation() != null) {
             weatherService.refreshAsync(settings.getLocation().getLatitude(),
@@ -250,7 +293,7 @@ public class AppController implements PrayerScheduler.Listener, WeatherService.L
 
     @Override
     public void onWeatherError(String message) {
-        System.err.println("[Weather] " + message);
+        com.tawkit.infrastructure.Log.warn("Weather: " + message);
     }
 
     // -------------------------------------------------------------- helpers

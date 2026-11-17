@@ -33,6 +33,11 @@ public final class Messages {
         return "ar".equals(current.getLanguage());
     }
 
+    /** In-code fallbacks so a damaged bundle never shows raw keys (change #3). */
+    private static final java.util.Map<String, String> FALLBACKS = java.util.Map.of(
+            "app.title", "Tawkit - Prayer Times"
+    );
+
     public static String get(String key) {
         try {
             return ResourceBundle.getBundle(BASE, current).getString(key);
@@ -40,8 +45,13 @@ public final class Messages {
             try {
                 return ResourceBundle.getBundle(BASE, Locale.ENGLISH).getString(key);
             } catch (MissingResourceException e2) {
-                return key;
+                return FALLBACKS.getOrDefault(key, key);
+            } catch (Exception e3) {
+                return FALLBACKS.getOrDefault(key, key); // bundle files entirely missing
             }
+        } catch (Exception e) {
+            // Never let a broken resource crash the kiosk (change #3)
+            return FALLBACKS.getOrDefault(key, key);
         }
     }
 

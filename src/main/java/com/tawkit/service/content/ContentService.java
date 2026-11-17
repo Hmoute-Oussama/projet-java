@@ -12,6 +12,7 @@ import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -49,6 +50,17 @@ public class ContentService {
 
     public List<ContentItem> getVerses() {
         return Collections.unmodifiableList(verses);
+    }
+
+    /**
+     * Deterministic "verse of the day" (change #8): a stable pick from the
+     * bundled Qur'an verses for the given date — the same verse shows all
+     * day, independent of the main content rotation.
+     */
+    public ContentItem getVerseOfDay(LocalDate date) {
+        if (verses.isEmpty()) return null;
+        int seed = date.getYear() * 366 + date.getDayOfYear();
+        return verses.get(seed % verses.size());
     }
 
     public List<ContentItem> getHadiths() {
@@ -118,7 +130,8 @@ public class ContentService {
                 }
             }
         } catch (IOException e) {
-            System.err.println("[Content] failed reading " + resource + ": " + e.getMessage());
+            com.tawkit.infrastructure.Log.warn("Content resource failed " + resource
+                    + " (" + e.getMessage() + ")");
         }
         return lines;
     }
@@ -135,7 +148,8 @@ public class ContentService {
                         if (slide != null) slides.add(slide);
                     }
                 } catch (IOException e) {
-                    System.err.println("[Content] slides.txt unreadable: " + e.getMessage());
+                    com.tawkit.infrastructure.Log.warn("slides.txt unreadable ("
+                            + e.getMessage() + ")");
                 }
             }
             // Also pick up image files dropped in the folder directly

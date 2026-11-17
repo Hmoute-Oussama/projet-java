@@ -52,7 +52,8 @@ public class CityService {
                 }
             }
         } catch (Exception e) {
-            System.err.println("[City] failed loading database: " + e.getMessage());
+            com.tawkit.infrastructure.Log.warn("City database failed loading ("
+                    + e.getMessage() + ")");
         }
     }
 

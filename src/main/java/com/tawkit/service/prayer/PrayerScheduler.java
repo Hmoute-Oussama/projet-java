@@ -9,11 +9,8 @@ import com.tawkit.model.settings.AppSettings;
 
 import javax.swing.Timer;
 import java.time.Duration;
-import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
-import java.time.ZoneId;
-import java.time.ZoneOffset;
 
 /**
  * Heartbeat of the application. Every second it determines:
@@ -142,16 +139,29 @@ public class PrayerScheduler {
                     iqamaTime = adhan.plusMinutes(iqama.getOffsetMinutes(type));
                 }
             }
+            // Jumu'a mode (#5): on Friday the Dhuhr iqama slot carries the khutba time
+            if (type == PrayerType.DHUHR && settings.isJumuaEnabled()
+                    && date.getDayOfWeek() == java.time.DayOfWeek.FRIDAY
+                    && settings.getJumuaKhutbaTime() != null) {
+                iqamaTime = settings.getJumuaKhutbaTime();
+            }
             day.put(type, new PrayerEntry(type, adhan, iqamaTime));
         }
         return day;
     }
 
-    /** Location timezone if set, otherwise the system default offset. */
-    static double resolveTimezone(Location loc) {
-        if (loc != null && loc.getTimezone() != 0.0) return loc.getTimezone();
-        ZoneId zone = ZoneId.systemDefault();
-        return ZoneOffset.from(zone.getRules().getOffset(Instant.now())).getTotalSeconds() / 3600.0;
+    /**
+     * Location timezone if plausible, otherwise derived from longitude/system
+     * zone via {@link TimezoneCheck} — protects against the classic
+     * "times off by an hour" misconfiguration (change #2). Public so view
+     * dialogs (monthly table) compute with identical times.
+     */
+    public static double resolveTimezone(Location loc) {
+        if (loc != null && loc.getTimezone() != 0.0
+                && Math.abs(loc.getTimezone() - loc.getLongitude() / 15.0) <= 1.25) {
+            return loc.getTimezone(); // stored offset is sane, keep it
+        }
+        return TimezoneCheck.resolve(loc, LocalDate.now());
     }
 
     // ------------------------------------------------------------- ticking
