@@ -208,8 +208,16 @@ public class AppController implements PrayerScheduler.Listener, WeatherService.L
         var loc = settings.getLocation();
         if (loc != null) {
             frame.setCityInfo(loc.getName(), loc.getLatitude(), loc.getLongitude());
+            // Keep the large dashboard clock synchronized with the selected city.
+            // Without this call, prayer calculations can use the new timezone
+            // while the displayed clock continues using the previous/system zone.
+            frame.setLocationTimezone(PrayerScheduler.resolveTimezone(loc));
         } else {
             frame.setCityInfo("", 0, 0);
+            double systemOffset = java.time.ZoneOffset.from(
+                    java.time.ZoneId.systemDefault().getRules().getOffset(java.time.Instant.now())
+            ).getTotalSeconds() / 3600.0;
+            frame.setLocationTimezone(systemOffset);
         }
         frame.setUse24Hour(settings.isUse24HourClock());
         frame.setShowSeconds(settings.isShowSeconds());

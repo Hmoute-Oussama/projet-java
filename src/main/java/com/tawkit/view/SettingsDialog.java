@@ -32,6 +32,8 @@ public class SettingsDialog extends JDialog {
     };
 
     private final CityService cityService = new CityService();
+    /** Prevents intermediate JComboBox events while rebuilding the city list. */
+    private boolean refreshingCities = false;
 
     // Location
     private final JTextField mosqueField = new JTextField(20);
@@ -183,27 +185,38 @@ public class SettingsDialog extends JDialog {
     }
 
     private void loadCityCountries() {
+        // Register listeners before loading values so the first country is
+        // initialized through the same path as every later country change.
+        countryCombo.addActionListener(e -> refreshCityCombo());
+        cityCombo.addActionListener(e -> {
+            if (!refreshingCities) updateLocationFromCity();
+        });
+
         countryCombo.removeAllItems();
         for (String country : cityService.getCountries()) {
             countryCombo.addItem(country);
         }
-        // A country change refreshes its cities; a city change updates the
-        // coordinates and UTC offset immediately.
-        countryCombo.addActionListener(e -> refreshCityCombo());
-        cityCombo.addActionListener(e -> updateLocationFromCity());
+        refreshCityCombo();
     }
 
+    /** Rebuilds the city list and selects the first city of the new country. */
     private void refreshCityCombo() {
-        cityCombo.removeAllItems();
         String country = (String) countryCombo.getSelectedItem();
-        if (country == null) return;
-
-        for (String city : cityService.getCitiesOf(country)) {
-            cityCombo.addItem(city);
+        refreshingCities = true;
+        try {
+            cityCombo.removeAllItems();
+            if (country != null) {
+                for (String city : cityService.getCitiesOf(country)) {
+                    cityCombo.addItem(city);
+                }
+            }
+        } finally {
+            refreshingCities = false;
         }
 
-        // JComboBox selects the first city automatically. Explicitly update
-        // once as well, including the case where the list is empty.
+        // JComboBox selects the first inserted city. Always refresh the
+        // coordinates explicitly so values from the previous country cannot
+        // remain in the fields.
         updateLocationFromCity();
     }
 
@@ -264,10 +277,16 @@ public class SettingsDialog extends JDialog {
     private void updateLocationFromCity() {
         String country = (String) countryCombo.getSelectedItem();
         String city = (String) cityCombo.getSelectedItem();
-        if (country == null || city == null) return;
+        CityService.City found = (country == null || city == null)
+                ? null : cityService.find(country, city);
 
-        CityService.City found = cityService.find(country, city);
-        if (found == null) return;
+        if (found == null) {
+            // Do not keep coordinates/timezone belonging to the old country.
+            latField.setText("");
+            lonField.setText("");
+            timezoneField.setText("");
+            return;
+        }
 
         latField.setText(Double.toString(found.latitude()));
         lonField.setText(Double.toString(found.longitude()));
