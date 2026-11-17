@@ -85,6 +85,39 @@ class SettingsServiceTest {
     }
 
     @Test
+    void temperatureUnitAndCountryCodeRoundTrip() {
+        SettingsService svc = new SettingsService(tempDir.resolve("s.properties"));
+        AppSettings saved = new AppSettings();
+        saved.setTemperatureUnit('F');
+        saved.setLocation(new Location("Vienna", "Austria", 48.21, 16.37, 1.0));
+        saved.getLocation().setCountryCode("at");
+        svc.save(saved);
+
+        AppSettings loaded = svc.load();
+        assertEquals('F', loaded.getTemperatureUnit());
+        assertEquals("AT", loaded.getLocation().getCountryCode()); // normalized upper-case
+    }
+
+    @Test
+    void legacyLocationWithoutCountryCodeStillLoads() throws Exception {
+        SettingsService svc = new SettingsService(tempDir.resolve("s.properties"));
+        AppSettings saved = new AppSettings();
+        saved.setLocation(new Location("Cairo", "Egypt", 30.04, 31.24, 2.0));
+        svc.save(saved);
+        // Strip the countryCode field to simulate a pre-widget settings file
+        var file = tempDir.resolve("s.properties");
+        var lines = java.nio.file.Files.readAllLines(file).stream()
+                .filter(l -> !l.contains("temperatureUnit"))
+                .toList();
+        java.nio.file.Files.write(file, lines);
+
+        AppSettings loaded = svc.load();
+        assertEquals('C', loaded.getTemperatureUnit()); // default unit
+        assertEquals("Cairo", loaded.getLocation().getName());
+        assertEquals("", loaded.getLocation().getCountryCode());
+    }
+
+    @Test
     void listsRoundTrip() {
         SettingsService svc = new SettingsService(tempDir.resolve("s.properties"));
         AppSettings saved = new AppSettings();

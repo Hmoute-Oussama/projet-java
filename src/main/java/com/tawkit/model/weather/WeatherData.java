@@ -9,13 +9,24 @@ public class WeatherData {
     private final double currentTemp;
     private final int currentCode;          // WMO weather code
     private final double currentWindKmh;
+    private final boolean isDay;            // night → moon instead of sun
     private final List<WeatherDay> days;
 
     public WeatherData(double currentTemp, int currentCode, double currentWindKmh, List<WeatherDay> days) {
+        this(currentTemp, currentCode, currentWindKmh, true, days);
+    }
+
+    public WeatherData(double currentTemp, int currentCode, double currentWindKmh,
+                       boolean isDay, List<WeatherDay> days) {
         this.currentTemp = currentTemp;
         this.currentCode = currentCode;
         this.currentWindKmh = currentWindKmh;
+        this.isDay = isDay;
         this.days = days;
+    }
+
+    public boolean isDay() {
+        return isDay;
     }
 
     public double getCurrentTemp() {

@@ -47,6 +47,9 @@ public class AppSettings {
     private boolean jumuaEnabled = true;
     private java.time.LocalTime jumuaKhutbaTime = java.time.LocalTime.of(12, 45);
 
+    /** Temperature unit for the weather widget: 'C' or 'F'. */
+    private char temperatureUnit = 'C';
+
     // ---- background: "night" | "green" | "gradient-blue" | "custom" ----
     private String backgroundTheme = "night";
     private String customBackgroundPath = "";
@@ -297,5 +300,14 @@ public class AppSettings {
 
     public void setJumuaKhutbaTime(java.time.LocalTime time) {
         if (time != null) this.jumuaKhutbaTime = time;
+    }
+
+    /** Temperature unit of the weather widget: 'C' (default) or 'F'. */
+    public char getTemperatureUnit() {
+        return temperatureUnit == 'F' ? 'F' : 'C';
+    }
+
+    public void setTemperatureUnit(char unit) {
+        this.temperatureUnit = unit == 'f' || unit == 'F' ? 'F' : 'C';
     }
 }

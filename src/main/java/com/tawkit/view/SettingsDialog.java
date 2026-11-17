@@ -75,6 +75,7 @@ public class SettingsDialog extends JDialog {
     private final JButton customBgBrowse = new JButton("…");
     private final JComboBox<String> languageCombo = new JComboBox<>(
             new String[]{"en", "ar", "fr", "tr", "ur", "id"});
+    private final JComboBox<String> unitCombo = new JComboBox<>(new String[]{"°C", "°F"});
 
     // Content
     private final JSpinner rotationSpinner = new JSpinner(new SpinnerNumberModel(18, 5, 120, 1));
@@ -435,6 +436,11 @@ public class SettingsDialog extends JDialog {
         gbc.gridx = 1;
         panel.add(themeCombo, gbc);
 
+        gbc.gridy = 7; gbc.gridx = 0;
+        panel.add(new JLabel("Temperature unit:"), gbc);
+        gbc.gridx = 1;
+        panel.add(unitCombo, gbc);
+
         gbc.gridy = 6; gbc.gridx = 0;
         panel.add(new JLabel("Custom background image:"), gbc);
         gbc.gridx = 1;
@@ -445,10 +451,10 @@ public class SettingsDialog extends JDialog {
         panel.add(bgRow, gbc);
 
         // ---- Live dashboard preview (#15) ----
-        gbc.gridy = 7; gbc.gridx = 0; gbc.gridwidth = 2;
+        gbc.gridy = 8; gbc.gridx = 0; gbc.gridwidth = 2;
         panel.add(new JLabel("Live preview (theme, background, mosque name):"), gbc);
         gbc.gridwidth = 1;
-        gbc.gridy = 8; gbc.gridx = 0; gbc.gridwidth = 2;
+        gbc.gridy = 9; gbc.gridx = 0; gbc.gridwidth = 2;
         previewScreen.setPreferredSize(new Dimension(340, 192));
         previewScreen.setMosqueName(mosqueField.getText());
         previewScreen.applyTheme((String) themeCombo.getSelectedItem());
@@ -713,6 +719,7 @@ public class SettingsDialog extends JDialog {
         hijriOffset.setValue(settings.getHijriOffsetDays());
         themeCombo.setSelectedItem(settings.getBackgroundTheme());
         customBgField.setText(settings.getCustomBackgroundPath());
+        unitCombo.setSelectedItem(settings.getTemperatureUnit() == 'F' ? "°F" : "°C");
 
         slidesCheck.setSelected(settings.isSlidesEnabled());
         weatherCheck.setSelected(settings.isWeatherEnabled());
@@ -785,6 +792,7 @@ public class SettingsDialog extends JDialog {
         settings.setHijriOffsetDays((Integer) hijriOffset.getValue());
         settings.setBackgroundTheme((String) themeCombo.getSelectedItem());
         settings.setCustomBackgroundPath(customBgField.getText().trim());
+        settings.setTemperatureUnit("°F".equals(unitCombo.getSelectedItem()) ? 'F' : 'C');
 
         settings.setSlidesEnabled(slidesCheck.isSelected());
         settings.setWeatherEnabled(weatherCheck.isSelected());

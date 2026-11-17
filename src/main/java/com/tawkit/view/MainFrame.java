@@ -37,6 +37,16 @@ public class MainFrame extends JFrame {
     private Runnable settingsOpener;
     private Runnable monthlyOpener;   // monthly times dialog (#1)
 
+    // Weather widget state for the hamburger menu (set by the controller)
+    private String locationLabel = "No location set";
+    private String weatherUpdatedLabel = "Not updated yet";
+    private char temperatureUnit = 'C';
+    private WeatherMenu.Actions headerActions;
+
+    /** Actions for the widget's hamburger menu (wired by AppController). */
+    public interface HeaderMenuActions extends WeatherMenu.Actions {
+    }
+
     public MainFrame() {
         super("Tawkit - Prayer Times");
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
@@ -163,22 +173,65 @@ public class MainFrame extends JFrame {
         this.monthlyOpener = opener;
     }
 
-    /** Popup menu from the ☰ button: settings, monthly times, quit. */
+    /** Registers the hamburger-menu actions (controller implements them). */
+    public void setHeaderMenuActions(HeaderMenuActions actions) {
+        this.headerActions = actions;
+    }
+
+    /** Menu data shown under "Location:" in the widget menu. */
+    public void setLocationLabel(String label) {
+        this.locationLabel = label == null || label.isBlank() ? "No location set" : label;
+    }
+
+    /** "Updated 18:42" line for the widget menu. */
+    public void setWeatherUpdatedLabel(String label) {
+        this.weatherUpdatedLabel = label;
+    }
+
+    /** Current °C/°F shown in the widget menu. */
+    public void setTemperatureUnit(char unit) {
+        this.temperatureUnit = unit;
+        screen.setTemperatureUnit(unit);
+        repaint();
+    }
+
+    /** Dynamic country flag for the widget (ISO 3166-1 alpha-2). */
+    public void setCountryFlag(String isoCode) {
+        screen.setCountryFlag(isoCode);
+    }
+
+    /** Weather widget is fetching → loading spinner instead of a stale icon. */
+    public void setWeatherLoading() {
+        screen.setWeatherState(com.tawkit.view.render.HeaderLeftElement.WeatherState.LOADING);
+    }
+
+    /** Weather fetch failed → honest "--°" state (retry available in menu). */
+    public void setWeatherError(String message) {
+        com.tawkit.infrastructure.Log.warn("Weather error: " + message);
+        screen.setWeatherState(com.tawkit.view.render.HeaderLeftElement.WeatherState.ERROR);
+    }
+
+    /** Popup menu from the ☰ button: weather/location + app entries. */
     private void showMainMenu() {
-        JPopupMenu menu = new JPopupMenu();
-        javax.swing.JMenuItem settingsItem = new javax.swing.JMenuItem("Settings…");
-        settingsItem.addActionListener(e -> openSettings());
-        javax.swing.JMenuItem monthlyItem = new javax.swing.JMenuItem("Monthly prayer times…");
-        monthlyItem.addActionListener(e -> openMonthly());
-        javax.swing.JMenuItem fullscreenItem = new javax.swing.JMenuItem("Toggle full screen (F11)");
-        fullscreenItem.addActionListener(e -> toggleFullScreen());
-        javax.swing.JMenuItem quitItem = new javax.swing.JMenuItem("Quit (Ctrl+Q)");
-        quitItem.addActionListener(e -> System.exit(0));
-        menu.add(settingsItem);
-        menu.add(monthlyItem);
-        menu.add(fullscreenItem);
-        menu.addSeparator();
-        menu.add(quitItem);
+        WeatherMenu menu = new WeatherMenu(locationLabel, temperatureUnit,
+                weatherUpdatedLabel, new WeatherMenu.Actions() {
+                    @Override public void useMyLocation() {
+                        if (headerActions != null) headerActions.useMyLocation();
+                    }
+                    @Override public void searchCity() {
+                        if (headerActions != null) headerActions.searchCity();
+                    }
+                    @Override public void refreshWeather() {
+                        if (headerActions != null) headerActions.refreshWeather();
+                    }
+                    @Override public void toggleTemperatureUnit() {
+                        if (headerActions != null) headerActions.toggleTemperatureUnit();
+                    }
+                    @Override public void openSettings() { openSettings(); }
+                    @Override public void openMonthly() { openMonthly(); }
+                    @Override public void toggleFullScreen() { toggleFullScreen(); }
+                    @Override public void quit() { System.exit(0); }
+                });
         menu.show(this, 40, 40);
     }
 
