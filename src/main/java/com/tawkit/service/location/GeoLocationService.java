@@ -65,7 +65,7 @@ public class GeoLocationService {
         String city = extractString(json, "city");
         String country = extractString(json, "country");
         if (city.isBlank()) return null;
-        double tz = extractNumber(json, "timezone");
+        double tz = timezoneOffset(json);
         if (tz == 0) {
             tz = TimezoneCheck.resolve(new Location(city, country, lat, lon, 0.0), null);
         }
@@ -74,12 +74,40 @@ public class GeoLocationService {
         return loc;
     }
 
+    /**
+     * ipwho.is returns {@code "timezone":{"id":"Africa/Casablanca",
+     * "offset":3600,…}} — the current offset in seconds. This is exact and
+     * DST-aware, unlike the old longitude heuristic.
+     */
+    private static double timezoneOffset(String json) {
+        int tz = json.indexOf("\"timezone\"");
+        if (tz < 0) return 0;
+        int offset = json.indexOf("\"offset\"", tz);
+        if (offset >= 0) {
+            return extractNumber(json.substring(offset), "offset") / 3600.0;
+        }
+        String id = extractString(json, "id");
+        if (!id.isBlank()) {
+            try {
+                return java.time.ZoneOffset.from(
+                        java.time.ZoneId.of(id).getRules()
+                                .getOffset(java.time.Instant.now()))
+                        .getTotalSeconds() / 3600.0;
+            } catch (Exception ignored) {
+            }
+        }
+        return 0;
+    }
+
     // ------------------------------------------------------------ JSON utils
 
     private static double extractNumber(String json, String key) {
         int i = json.indexOf("\"" + key + "\"");
         if (i < 0) return 0;
         i = json.indexOf(':', i) + 1;
+        while (i < json.length() && Character.isWhitespace(json.charAt(i))) {
+            i++; // ipwho.is pretty-prints with a space after ':'
+        }
         StringBuilder sb = new StringBuilder();
         while (i < json.length() && (Character.isDigit(json.charAt(i))
                 || json.charAt(i) == '-' || json.charAt(i) == '.')) {

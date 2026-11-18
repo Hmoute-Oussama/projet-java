@@ -44,8 +44,8 @@ public class AppController implements PrayerScheduler.Listener, WeatherService.L
     private boolean showingAzkar = false;
     private boolean preFajrAlertFired = false;
     private boolean jumuaAlertFired = false;
-    private final com.tawkit.service.location.GeoLocationService geoLocation =
-            new com.tawkit.service.location.GeoLocationService();
+    private final com.tawkit.service.location.PreciseLocationService preciseLocation =
+            new com.tawkit.service.location.PreciseLocationService();
     private final com.tawkit.service.location.GeocodingService geocoding =
             new com.tawkit.service.location.GeocodingService();
     private java.time.Instant lastWeatherRefresh = java.time.Instant.EPOCH; // 30-min cadence
@@ -102,36 +102,116 @@ public class AppController implements PrayerScheduler.Listener, WeatherService.L
         });
     }
 
-    /** Silent IP location lookup (first launch): sets location if found. */
+    /** Silent location lookup (first launch): sets location if found. */
     private void useMyLocationQuietly() {
-        geoLocation.lookupAsync(
-                loc -> {
-                    settings.setLocation(loc);
-                    settingsService.save(settings);
-                    settingsChanged();
-                    com.tawkit.infrastructure.Log.info("Auto-location: "
-                            + loc.getDisplayName() + " (" + loc.getLatitude() + ", "
-                            + loc.getLongitude() + ")");
-                },
-                msg -> com.tawkit.infrastructure.Log.warn("Auto-location skipped: " + msg));
+        preciseLocation.locateAsync(new com.tawkit.service.location.PreciseLocationService.Callback() {
+            @Override
+            public void onLocation(com.tawkit.service.location.PreciseLocationService.Fix fix) {
+                applyDetectedLocation(fix, "Auto-location");
+            }
+
+            @Override
+            public void onFailure(String message, boolean permissionBlocked) {
+                com.tawkit.infrastructure.Log.warn("Auto-location skipped: " + message);
+            }
+        });
     }
 
-    /** IP location lookup triggered from the menu, with feedback dialogs. */
+    /** Location lookup triggered from the menu, with feedback dialogs. */
     private void useMyLocationInteractive() {
         frame.setLocationLabel("Detecting location…");
-        geoLocation.lookupAsync(
-                loc -> {
-                    settings.setLocation(loc);
-                    settingsService.save(settings);
-                    settingsChanged();
-                    com.tawkit.infrastructure.Log.info("Location set via IP: " + loc.getDisplayName());
-                },
-                msg -> javax.swing.SwingUtilities.invokeLater(() ->
-                        javax.swing.JOptionPane.showMessageDialog(frame,
-                                "Could not detect your location automatically:\n" + msg
-                                        + "\n\nUse \"Search city…\" instead.",
-                                "Location unavailable",
-                                javax.swing.JOptionPane.WARNING_MESSAGE)));
+        preciseLocation.locateAsync(new com.tawkit.service.location.PreciseLocationService.Callback() {
+            @Override
+            public void onLocation(com.tawkit.service.location.PreciseLocationService.Fix fix) {
+                applyDetectedLocation(fix, "Location set");
+                frame.setLocationLabel(fix.location().getDisplayName());
+                if (fix.permissionBlocked()) {
+                    showApproximateLocationNotice(fix);
+                }
+            }
+
+            @Override
+            public void onFailure(String message, boolean permissionBlocked) {
+                var current = settings.getLocation();
+                frame.setLocationLabel(current == null ? "No location set" : current.getDisplayName());
+                showLocationFailure(message, permissionBlocked);
+            }
+        });
+    }
+
+    /** Stores a detected fix and refreshes prayer times, clock and weather. */
+    private void applyDetectedLocation(
+            com.tawkit.service.location.PreciseLocationService.Fix fix, String logPrefix) {
+        var loc = fix.location();
+        settings.setLocation(loc);
+        settingsService.save(settings);
+        settingsChanged();
+        com.tawkit.infrastructure.Log.info(logPrefix + ": " + loc.getDisplayName()
+                + " (" + loc.getLatitude() + ", " + loc.getLongitude()
+                + ", " + fix.accuracyText() + ")");
+    }
+
+    /**
+     * Actionable error dialog: on Windows the usual cause is the machine-wide
+     * "Location services / Let desktop apps access your location" setting.
+     */
+    private void showLocationFailure(String message, boolean permissionBlocked) {
+        boolean windows = System.getProperty("os.name", "").toLowerCase().contains("win");
+        String text = permissionBlocked
+                ? "Windows is blocking location access.\n\n"
+                        + "Turn on Settings → Privacy & security → Location:\n"
+                        + "  • Location services\n"
+                        + "  • Let desktop apps access your location\n\n"
+                        + "Then press “Use my location” again."
+                : "Could not detect your location automatically:\n" + message
+                        + "\n\nUse “Search city…” or type the coordinates manually.";
+        String[] options = (windows && permissionBlocked)
+                ? new String[]{"Open Windows settings", "Cancel"}
+                : new String[]{"OK"};
+        int choice = javax.swing.JOptionPane.showOptionDialog(frame, text,
+                "Location unavailable", javax.swing.JOptionPane.DEFAULT_OPTION,
+                javax.swing.JOptionPane.WARNING_MESSAGE, null, options, options[0]);
+        if (windows && permissionBlocked && choice == 0) {
+            openWindowsLocationSettings();
+        }
+    }
+
+    /**
+     * A position was applied, but it is the network approximation because
+     * Windows blocks the exact one — tell the user how to get the exact fix.
+     */
+    private void showApproximateLocationNotice(
+            com.tawkit.service.location.PreciseLocationService.Fix fix) {
+        boolean windows = System.getProperty("os.name", "").toLowerCase().contains("win");
+        String text = "Location set to " + fix.location().getDisplayName()
+                + " — approximate network position.\n\n"
+                + (windows
+                        ? "For the exact position, turn on Settings → Privacy & security → "
+                                + "Location:\n  • Location services\n"
+                                + "  • Let desktop apps access your location\n\n"
+                                + "Then choose “Use my location” again."
+                        : "The exact position needs a system location service that is not "
+                                + "available on this platform.");
+        String[] options = windows
+                ? new String[]{"Open Windows settings", "OK"}
+                : new String[]{"OK"};
+        int choice = javax.swing.JOptionPane.showOptionDialog(frame, text,
+                "Approximate location", javax.swing.JOptionPane.DEFAULT_OPTION,
+                javax.swing.JOptionPane.INFORMATION_MESSAGE, null, options, options[0]);
+        if (windows && choice == 0) {
+            openWindowsLocationSettings();
+        }
+    }
+
+    /** Opens the Windows page with "Location services" and desktop-app access. */
+    private void openWindowsLocationSettings() {
+        try {
+            new ProcessBuilder("cmd", "/c", "start", "",
+                    "ms-settings:privacy-location").start();
+        } catch (java.io.IOException e) {
+            com.tawkit.infrastructure.Log.warn("Cannot open Windows location settings ("
+                    + e.getMessage() + ")");
+        }
     }
 
     /** City search dialog → real coordinates + country + flag via geocoding API. */
@@ -208,13 +288,15 @@ public class AppController implements PrayerScheduler.Listener, WeatherService.L
         var loc = settings.getLocation();
         if (loc != null) {
             frame.setCityInfo(loc.getName(), loc.getLatitude(), loc.getLongitude());
+            frame.setLocationLabel(loc.getDisplayName());
+            frame.setCountryFlag(resolveFlagIso(loc));
             // Keep the large dashboard clock synchronized with the selected city.
             // Without this call, prayer calculations can use the new timezone
             // while the displayed clock continues using the previous/system zone.
-            frame.setCountryFlag(resolveFlagIso(loc));
             frame.setLocationTimezone(PrayerScheduler.resolveTimezone(loc));
         } else {
             frame.setCityInfo("", 0, 0);
+            frame.setLocationLabel("No location set");
             frame.setCountryFlag("");
             double systemOffset = java.time.ZoneOffset.from(
                     java.time.ZoneId.systemDefault().getRules().getOffset(java.time.Instant.now())

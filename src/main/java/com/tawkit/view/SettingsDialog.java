@@ -3,9 +3,12 @@ package com.tawkit.view;
 import com.tawkit.model.prayer.AsrMethod;
 import com.tawkit.model.prayer.CalculationMethod;
 import com.tawkit.model.prayer.IqamaSettings;
+import com.tawkit.model.prayer.Location;
 import com.tawkit.model.prayer.PrayerType;
 import com.tawkit.model.settings.AppSettings;
 import com.tawkit.service.city.CityService;
+import com.tawkit.service.city.CountryCodes;
+import com.tawkit.service.location.PreciseLocationService;
 import com.tawkit.service.settings.SettingsService;
 
 import javax.swing.*;
@@ -42,6 +45,16 @@ public class SettingsDialog extends JDialog {
     private final JTextField latField = new JTextField(8);
     private final JTextField lonField = new JTextField(8);
     private final JTextField timezoneField = new JTextField(5);
+    private final JButton useMyLocationButton = new JButton("⌖ Use my location");
+    private final JLabel locationStatus = new JLabel(" ");
+    private final PreciseLocationService locationService = new PreciseLocationService();
+    /**
+     * Exact location returned by "Use my location" — carries the real city
+     * name and ISO country code that the city combo cannot represent.
+     */
+    private Location detectedLocation;
+    /** True while the dialog itself rebuilds the country/city combos. */
+    private boolean suppressCityEvents = false;
 
     // Prayer
     private final JComboBox<CalculationMethod> methodCombo = new JComboBox<>(CalculationMethod.values());
@@ -193,9 +206,15 @@ public class SettingsDialog extends JDialog {
     private void loadCityCountries() {
         // Register listeners before loading values so the first country is
         // initialized through the same path as every later country change.
-        countryCombo.addActionListener(e -> refreshCityCombo());
+        countryCombo.addActionListener(e -> {
+            if (suppressCityEvents) return;
+            detectedLocation = null; // user picked another country
+            refreshCityCombo();
+        });
         cityCombo.addActionListener(e -> {
-            if (!refreshingCities) updateLocationFromCity();
+            if (refreshingCities || suppressCityEvents) return;
+            detectedLocation = null; // user picked another city
+            updateLocationFromCity();
         });
 
         countryCombo.removeAllItems();
@@ -264,20 +283,201 @@ public class SettingsDialog extends JDialog {
         panel.add(timezoneField, gbc);
 
         gbc.gridy = 6; gbc.gridx = 0; gbc.gridwidth = 2;
+        JPanel cityActions = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
+        cityActions.add(useMyLocationButton);
         JButton applyCity = new JButton("Apply selected city");
         applyCity.addActionListener(e -> applySelectedCity());
-        panel.add(applyCity, gbc);
+        cityActions.add(applyCity);
+        panel.add(cityActions, gbc);
 
-        gbc.gridy = 7; gbc.gridwidth = 2;
-        panel.add(new JLabel("<html><i>Pick a country and city, then press apply — "
-                + "or type coordinates manually.</i></html>"), gbc);
+        gbc.gridy = 7; gbc.gridx = 0; gbc.gridwidth = 2;
+        locationStatus.setFont(locationStatus.getFont().deriveFont(
+                locationStatus.getFont().getSize2D() - 1f));
+        locationStatus.setForeground(new Color(0x6B, 0x6B, 0x6B));
+        panel.add(locationStatus, gbc);
+
+        gbc.gridy = 8; gbc.gridwidth = 2;
+        panel.add(new JLabel("<html><i>“Use my location” takes the exact position reported by "
+                + "this computer.<br>For best accuracy, turn on Windows location services "
+                + "(Privacy &amp; security → Location).<br>You can also pick a city or type "
+                + "coordinates manually.</i></html>"), gbc);
+
+        useMyLocationButton.setToolTipText(
+                "Detect this computer's exact position and apply it immediately");
+        useMyLocationButton.addActionListener(e -> detectMyLocation());
+
+        // Manual edits invalidate a previously detected fix (its name/country
+        // no longer match the coordinates the user typed).
+        javax.swing.event.DocumentListener clearDetected =
+                new javax.swing.event.DocumentListener() {
+                    @Override public void insertUpdate(javax.swing.event.DocumentEvent e) {
+                        detectedLocation = null;
+                    }
+
+                    @Override public void removeUpdate(javax.swing.event.DocumentEvent e) {
+                        detectedLocation = null;
+                    }
+
+                    @Override public void changedUpdate(javax.swing.event.DocumentEvent e) {
+                        detectedLocation = null;
+                    }
+                };
+        latField.getDocument().addDocumentListener(clearDetected);
+        lonField.getDocument().addDocumentListener(clearDetected);
+        timezoneField.getDocument().addDocumentListener(clearDetected);
+
         return panel;
     }
 
     private void applySelectedCity() {
-        // Kept for the existing button; city selection now updates these
-        // fields automatically, so this action is also safe to repeat.
-        updateLocationFromCity();
+        String country = (String) countryCombo.getSelectedItem();
+        String city = (String) cityCombo.getSelectedItem();
+        CityService.City found = (country == null || city == null)
+                ? null : cityService.find(country, city);
+        if (found != null) {
+            // Built-in city: use its reference coordinates.
+            latField.setText(Double.toString(found.latitude()));
+            lonField.setText(Double.toString(found.longitude()));
+            timezoneField.setText(Double.toString(found.timezone()));
+            detectedLocation = null;
+        }
+        // A detected/custom place is not in the database: keep its exact
+        // coordinates instead of clearing them.
+        applyNow();
+        locationStatus.setForeground(new Color(0x3B, 0x6E, 0x3B));
+        locationStatus.setText("📍 " + city + ", " + country + " applied.");
+    }
+
+    /** Exact position of this computer, applied straight to the live settings. */
+    private void detectMyLocation() {
+        useMyLocationButton.setEnabled(false);
+        locationStatus.setForeground(new Color(0x6B, 0x6B, 0x6B));
+        locationStatus.setText("Detecting your location…");
+        locationService.locateAsync(new PreciseLocationService.Callback() {
+            @Override
+            public void onLocation(PreciseLocationService.Fix fix) {
+                useMyLocationButton.setEnabled(true);
+                applyDetectedLocation(fix);
+            }
+
+            @Override
+            public void onFailure(String message, boolean permissionBlocked) {
+                useMyLocationButton.setEnabled(true);
+                locationStatus.setForeground(new Color(0xB0, 0x3A, 0x2E));
+                locationStatus.setText(permissionBlocked
+                        ? "Windows is blocking location access for desktop apps."
+                        : "Could not detect your location: " + message);
+                showLocationHelp(message, permissionBlocked);
+            }
+        });
+    }
+
+    private void applyDetectedLocation(PreciseLocationService.Fix fix) {
+        Location loc = fix.location();
+
+        // Show a non-built-in place (e.g. "Agdal") in the pickers without
+        // letting their listeners overwrite the exact coordinates.
+        suppressCityEvents = true;
+        try {
+            if (loc.getCountry() != null && !loc.getCountry().isBlank()) {
+                if (!containsItem(countryCombo, loc.getCountry())) {
+                    countryCombo.addItem(loc.getCountry());
+                }
+                countryCombo.setSelectedItem(loc.getCountry());
+                rebuildCityCombo(loc.getCountry(), loc.getName());
+            }
+        } finally {
+            suppressCityEvents = false;
+        }
+
+        latField.setText(String.valueOf(loc.getLatitude()));
+        lonField.setText(String.valueOf(loc.getLongitude()));
+        timezoneField.setText(String.valueOf(loc.getTimezone()));
+        // Set after the field updates above (their listeners clear it).
+        detectedLocation = loc;
+
+        locationStatus.setForeground(fix.permissionBlocked()
+                ? new Color(0xB0, 0x6A, 0x1E) : new Color(0x3B, 0x6E, 0x3B));
+        locationStatus.setText("📍 " + loc.getDisplayName() + " — "
+                + formatCoordinate(loc.getLatitude()) + ", "
+                + formatCoordinate(loc.getLongitude())
+                + " (" + fix.accuracyText() + ") — applied.");
+
+        applyNow(); // location is live immediately, no Save needed
+
+        // We got a usable position, but it is the network approximation
+        // because the OS is blocking the exact one: say so and offer the fix.
+        if (fix.permissionBlocked()) {
+            showLocationHelp(null, true);
+        }
+    }
+
+    /**
+     * Explains why no exact position could be obtained, with a shortcut to
+     * the Windows privacy page that controls desktop-app location access.
+     *
+     * @param message          network error message, or {@code null} when an
+     *                         approximate position was applied instead
+     * @param permissionBlocked OS refused location access
+     */
+    private void showLocationHelp(String message, boolean permissionBlocked) {
+        boolean windows = System.getProperty("os.name", "").toLowerCase().contains("win");
+        String reason = permissionBlocked
+                ? "Windows is blocking location access.\n\n"
+                : "Could not detect your location automatically:\n" + message + "\n\n";
+        String text = permissionBlocked
+                ? (message == null
+                        ? "Only an approximate position could be used because "
+                                + "Windows location access is off.\n\n"
+                        : "")
+                        + "For the exact position, turn on "
+                        + "Settings → Privacy & security → Location:\n"
+                        + "  • Location services\n"
+                        + "  • Let desktop apps access your location\n\n"
+                        + "Then press “Use my location” again."
+                : reason + "Pick a city below or type the coordinates manually.";
+        String[] options = (windows && permissionBlocked)
+                ? new String[]{"Open Windows settings", "Close"}
+                : new String[]{"OK"};
+        int choice = JOptionPane.showOptionDialog(this, text,
+                permissionBlocked ? "Exact location needs Windows permission"
+                        : "Location unavailable",
+                JOptionPane.DEFAULT_OPTION, JOptionPane.WARNING_MESSAGE,
+                null, options, options[0]);
+        if (windows && permissionBlocked && choice == 0) {
+            try {
+                new ProcessBuilder("cmd", "/c", "start", "",
+                        "ms-settings:privacy-location").start();
+            } catch (java.io.IOException e) {
+                com.tawkit.infrastructure.Log.warn(
+                        "Cannot open Windows location settings (" + e.getMessage() + ")");
+            }
+        }
+    }
+
+    private static String formatCoordinate(double value) {
+        return String.format(java.util.Locale.ROOT, "%.5f", value);
+    }
+
+    private static boolean containsItem(JComboBox<String> combo, String value) {
+        for (int i = 0; i < combo.getItemCount(); i++) {
+            if (value.equalsIgnoreCase(combo.getItemAt(i))) return true;
+        }
+        return false;
+    }
+
+    /** Rebuilds the city list and selects {@code city}, even if unknown. */
+    private void rebuildCityCombo(String country, String city) {
+        cityCombo.removeAllItems();
+        for (String name : cityService.getCitiesOf(country)) {
+            cityCombo.addItem(name);
+        }
+        if (city != null && !city.isBlank() && !containsItem(cityCombo, city)) {
+            cityCombo.addItem(city);
+        }
+        if (city != null && !city.isBlank()) {
+            cityCombo.setSelectedItem(city);
+        }
     }
 
     private void updateLocationFromCity() {
@@ -747,12 +947,24 @@ public class SettingsDialog extends JDialog {
         mosqueField.setText(settings.getMosqueName());
         var loc = settings.getLocation();
         if (loc != null) {
-            if (loc.getCountry() != null) countryCombo.setSelectedItem(loc.getCountry());
-            refreshCityCombo();
-            if (loc.getName() != null) cityCombo.setSelectedItem(loc.getName());
+            // Keep exact/custom places (e.g. detected by "Use my location")
+            // selectable even when they are not in the built-in city list.
+            suppressCityEvents = true;
+            try {
+                if (loc.getCountry() != null && !loc.getCountry().isBlank()) {
+                    if (!containsItem(countryCombo, loc.getCountry())) {
+                        countryCombo.addItem(loc.getCountry());
+                    }
+                    countryCombo.setSelectedItem(loc.getCountry());
+                    rebuildCityCombo(loc.getCountry(), loc.getName());
+                }
+            } finally {
+                suppressCityEvents = false;
+            }
             latField.setText(String.valueOf(loc.getLatitude()));
             lonField.setText(String.valueOf(loc.getLongitude()));
             timezoneField.setText(String.valueOf(loc.getTimezone()));
+            detectedLocation = loc;
         }
         methodCombo.setSelectedItem(settings.getCalculationMethod());
         asrCombo.setSelectedItem(settings.getAsrMethod());
@@ -816,10 +1028,29 @@ public class SettingsDialog extends JDialog {
             double lat = latField.getText().isBlank() ? 0 : Double.parseDouble(latField.getText().trim());
             double lon = lonField.getText().isBlank() ? 0 : Double.parseDouble(lonField.getText().trim());
             double tz = timezoneField.getText().isBlank() ? 0 : Double.parseDouble(timezoneField.getText().trim());
-            settings.setLocation(new com.tawkit.model.prayer.Location(
-                    (String) cityCombo.getSelectedItem(),
-                    (String) countryCombo.getSelectedItem(),
-                    lat, lon, tz));
+            String city = (String) cityCombo.getSelectedItem();
+            String country = (String) countryCombo.getSelectedItem();
+
+            // A detected fix keeps its real place name and ISO country code
+            // (needed for the flag) as long as the user did not move the
+            // coordinates manually.
+            Location detected = detectedLocation;
+            boolean stillDetected = detected != null
+                    && Math.abs(detected.getLatitude() - lat) < 1e-6
+                    && Math.abs(detected.getLongitude() - lon) < 1e-6;
+
+            Location location;
+            if (stillDetected) {
+                location = new Location(
+                        city == null || city.isBlank() ? detected.getName() : city,
+                        country == null || country.isBlank() ? detected.getCountry() : country,
+                        lat, lon, tz);
+                location.setCountryCode(detected.getCountryCode());
+            } else {
+                location = new Location(city, country, lat, lon, tz);
+                location.setCountryCode(CountryCodes.fromCountryName(country));
+            }
+            settings.setLocation(location);
         } catch (NumberFormatException ignored) {
         }
 

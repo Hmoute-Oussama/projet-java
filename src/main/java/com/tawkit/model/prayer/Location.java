@@ -72,10 +72,11 @@ public class Location {
     }
 
     public String getDisplayName() {
-        if (country != null && !country.isEmpty()) {
-            return name + ", " + country;
+        String place = (name == null || name.isBlank()) ? "My location" : name;
+        if (country != null && !country.isBlank()) {
+            return place + ", " + country;
         }
-        return name;
+        return place;
     }
 
     @Override

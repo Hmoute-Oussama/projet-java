@@ -136,6 +136,9 @@ public class GeocodingService {
         int i = json.indexOf("\"" + key + "\"");
         if (i < 0) return 0;
         i = json.indexOf(':', i) + 1;
+        while (i < json.length() && Character.isWhitespace(json.charAt(i))) {
+            i++;
+        }
         StringBuilder sb = new StringBuilder();
         while (i < json.length() && (Character.isDigit(json.charAt(i))
                 || json.charAt(i) == '-' || json.charAt(i) == '.')) {

@@ -65,6 +65,12 @@ public class TawkitScreen extends JComponent {
             background, headerLeft, dateHeader, emblem, mosqueName,
             clock, countdown, calligraphy, schedule, verseOfDay, footer);
 
+    /**
+     * When a verse of the day exists it owns the center of the screen, so the
+     * rotating calligraphy is not painted (they would overlap).
+     */
+    private boolean hasVerseOfDay = false;
+
     private Runnable onMenuClick;
     private final Timer secondTimer;
     private final Timer rotationTimer;
@@ -184,9 +190,10 @@ public class TawkitScreen extends JComponent {
         repaint();
     }
 
-    /** Sets the daily fixed verse shown in the corner widget (#8). */
+    /** Sets the daily fixed verse shown in the center of the dashboard (#8). */
     public void setVerseOfDay(com.tawkit.model.content.ContentItem verse) {
         verseOfDay.setVerse(verse);
+        hasVerseOfDay = verse != null;
         repaint();
     }
 
@@ -212,6 +219,10 @@ public class TawkitScreen extends JComponent {
 
         RenderContext ctx = context();
         for (DashboardElement element : elements) {
+            // The daily verse replaces the rotating calligraphy in the center
+            if (element == calligraphy && hasVerseOfDay) {
+                continue;
+            }
             // Content elements fade on rotation (#14); everything else paints solid
             if (element == calligraphy || element == verseOfDay || element == footer) {
                 g2.setComposite(java.awt.AlphaComposite.SrcOver.derive(
