@@ -5,7 +5,7 @@ import com.tawkit.model.prayer.PrayerType;
 import com.tawkit.service.format.TimeText;
 import com.tawkit.service.weather.TemperatureCurve;
 import com.tawkit.view.TawkitTheme;
-
+import com.tawkit.service.localization.Messages;
 import java.awt.Color;
 import java.awt.Font;
 import java.awt.Graphics2D;
@@ -27,6 +27,7 @@ public final class PrayerScheduleElement implements DashboardElement {
         float vw = (float) ctx.vw();
         PrayerType[] types = PrayerType.values();
         double colWidth = 96.0 / types.length;
+        boolean arabic = "ar".equals(Messages.getLocale().getLanguage());
 
         for (int i = 0; i < types.length; i++) {
             double colCenter = 2.0 * ctx.vw() + (i + 0.5) * colWidth * ctx.vw();
@@ -37,9 +38,18 @@ public final class PrayerScheduleElement implements DashboardElement {
             TextDraw.drawShadowed(g2, temperatureOf(type), colCenter, (float) (61.0 * ctx.vh()),
                     TextDraw.Anchor.CENTER, TawkitTheme.GOLDEN_BEIGE, 0.1f * vw);
 
-            // Name — serif, warm white
-            g2.setFont(TawkitTheme.serif(Font.PLAIN, 2.3f * vw));
-            TextDraw.drawShadowed(g2, displayName(type), colCenter, (float) (65.5 * ctx.vh()),
+            // Name — translated; Amiri font for Arabic; shrinks if too wide for its column
+            String name = displayName(type);
+            Font nameFont = arabic
+                    ? TawkitTheme.arabic(2.6f * vw)
+                    : TawkitTheme.serif(Font.PLAIN, 2.3f * vw);
+            g2.setFont(nameFont);
+            double maxWidth = colWidth * ctx.vw() * 0.95;
+            int textWidth = g2.getFontMetrics().stringWidth(name);
+            if (textWidth > maxWidth) {
+                g2.setFont(nameFont.deriveFont((float) (nameFont.getSize2D() * maxWidth / textWidth)));
+            }
+            TextDraw.drawShadowed(g2, name, colCenter, (float) (65.5 * ctx.vh()),
                     TextDraw.Anchor.CENTER, TawkitTheme.WARM_WHITE, 0.12f * vw);
 
             // Time — large bold white
@@ -50,14 +60,7 @@ public final class PrayerScheduleElement implements DashboardElement {
     }
 
     private String displayName(PrayerType type) {
-        return switch (type) {
-            case FAJR -> "Fajr";
-            case SHURUQ -> "Sunrise";
-            case DHUHR -> "Dhuhr";
-            case ASR -> "Asr";
-            case MAGHRIB -> "Maghrib";
-            case ISHA -> "Isha";
-        };
+        return Messages.prayerName(type);   // reads prayer.FAJR... from i18n/messages_XX.properties
     }
 
     private String timeOf(PrayerType type) {

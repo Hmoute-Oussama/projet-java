@@ -115,8 +115,14 @@ public class SettingsDialog extends JDialog {
         setIconImage(Icons.appIcon());
         buildUI();
         loadCityCountries();
-        setSize(620, 700);
-        setLocationRelativeTo(parent);
+        Rectangle screen = GraphicsEnvironment.getLocalGraphicsEnvironment().getMaximumWindowBounds();
+        double scale = UiScale.factor();
+        int w = (int) Math.min(620 * scale, screen.width * 0.9);
+        int h = (int) Math.min(700 * scale, screen.height * 0.9);
+        setSize(w, h);
+        setMinimumSize(new Dimension(Math.min(520, screen.width), Math.min(480, screen.height)));
+        setResizable(true);
+        setLocationRelativeTo(null);
         // ESC closes the dialog like Cancel
         javax.swing.InputMap im = getRootPane().getInputMap(javax.swing.JComponent.WHEN_IN_FOCUSED_WINDOW);
         javax.swing.ActionMap am = getRootPane().getActionMap();

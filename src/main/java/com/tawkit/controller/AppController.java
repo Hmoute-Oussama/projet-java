@@ -211,9 +211,11 @@ public class AppController implements PrayerScheduler.Listener, WeatherService.L
             // Keep the large dashboard clock synchronized with the selected city.
             // Without this call, prayer calculations can use the new timezone
             // while the displayed clock continues using the previous/system zone.
+            frame.setCountryFlag(resolveFlagIso(loc));
             frame.setLocationTimezone(PrayerScheduler.resolveTimezone(loc));
         } else {
             frame.setCityInfo("", 0, 0);
+            frame.setCountryFlag("");
             double systemOffset = java.time.ZoneOffset.from(
                     java.time.ZoneId.systemDefault().getRules().getOffset(java.time.Instant.now())
             ).getTotalSeconds() / 3600.0;
@@ -233,7 +235,7 @@ public class AppController implements PrayerScheduler.Listener, WeatherService.L
         } else {
             frame.applyTheme(settings.getBackgroundTheme());
         }
-
+        content.loadAnnouncementsFor(settings.getLanguage());
         frame.setTickerMessages(buildTickerMessages());
         frame.setContentItems(buildDefaultContent());
         frame.setRotationSeconds(settings.getContentRotationSeconds());
@@ -383,6 +385,7 @@ public class AppController implements PrayerScheduler.Listener, WeatherService.L
     public void onDayChanged(LocalDate newDay) {
         updateDates();
         frame.setVerseOfDay(content.getVerseOfDay(newDay)); // #8 — daily verse
+        content.loadAnnouncementsFor(settings.getLanguage());
         frame.setTickerMessages(buildTickerMessages());
         if (settings.isWeatherEnabled() && settings.getLocation() != null) {
             weatherService.refreshAsync(settings.getLocation().getLatitude(),

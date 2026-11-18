@@ -8,6 +8,10 @@ import java.awt.geom.Ellipse2D;
 import java.awt.geom.Path2D;
 import java.awt.geom.RoundRectangle2D;
 import java.util.Map;
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
+import java.io.InputStream;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Draws country flags dynamically from ISO 3166-1 alpha-2 codes — no
@@ -134,6 +138,21 @@ public final class FlagPainter {
 
     private FlagPainter() {
     }
+    private static final Map<String, BufferedImage> IMAGES = new ConcurrentHashMap<>();
+    private static final BufferedImage MISSING = new BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB);
+
+    /** Real flag picture for an ISO code, or MISSING if the file does not exist. */
+    private static BufferedImage image(String iso) {
+        return IMAGES.computeIfAbsent(iso.toLowerCase(), code -> {
+            try (InputStream in = FlagPainter.class.getResourceAsStream("/assets/flags/" + code + ".png")) {
+                if (in == null) return MISSING;
+                BufferedImage img = ImageIO.read(in);
+                return img == null ? MISSING : img;
+            } catch (Exception e) {
+                return MISSING;
+            }
+        });
+    }
 
     /** Paints the flag of {@code isoCode} into the rectangle; null/unknown → neutral badge. */
     public static void paint(Graphics2D g, String isoCode, float x, float y, float w, float h) {
@@ -145,15 +164,20 @@ public final class FlagPainter {
         g2.clip(new RoundRectangle2D.Float(x, y, w, h, w * 0.12f, w * 0.12f));
 
         String iso = isoCode == null ? "" : isoCode.toUpperCase();
+        BufferedImage img = iso.length() == 2 ? image(iso) : MISSING;
         Spec spec = FLAGS.get(iso);
-        if (spec != null) {
+        if (img != MISSING) {
+            // Real flag picture
+            g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC);
+            g2.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
+            g2.drawImage(img, Math.round(x), Math.round(y), Math.round(w), Math.round(h), null);
+        } else if (spec != null) {
             paintSpec(g2, iso, spec, x, y, w, h);
         } else if (iso.length() == 2) {
             paintBadge(g2, iso, x, y, w, h);
         } else {
             paintNoCountry(g2, x, y, w, h);
         }
-
         g2.dispose();
         // Thin dark border for contrast on any background
         g.setColor(new Color(0, 0, 0, 120));
@@ -308,3 +332,4 @@ public final class FlagPainter {
         return Color.decode(hex);
     }
 }
+

@@ -71,7 +71,7 @@ public final class HeaderLeftElement implements DashboardElement {
         TextDraw.draw(g2, coordsText, x, (float) (11.0 * vh), TextDraw.Anchor.LEFT, TawkitTheme.GRAY);
 
         // Flag of the resolved country (dynamic, never hardcoded)
-        paintFlag(g2, x, (float) (12.8 * vh), (float) (2.2 * vw), (float) (1.4 * vw));
+        paintFlag(g2, x, (float) (12.8 * vh), (float) (2.2 * vw), (float) (1.65 * vw));
     }
 
     /** True when the click hits the hamburger zone (opens the menu). */

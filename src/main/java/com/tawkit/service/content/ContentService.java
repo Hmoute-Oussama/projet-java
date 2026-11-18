@@ -71,8 +71,25 @@ public class ContentService {
         return Collections.unmodifiableList(adhkar);
     }
 
+    private static final java.util.regex.Pattern DAY_TAG = java.util.regex.Pattern.compile(
+            "\\[\\s*((?:MON|TUE|WED|THU|FRI|SAT|SUN)(?:\\s*,\\s*(?:MON|TUE|WED|THU|FRI|SAT|SUN))*)\\s*\\]",
+            java.util.regex.Pattern.CASE_INSENSITIVE);
+
+    /** Announcements for today: a tag like [FRI] or [SAT,SUN] (anywhere in the line) limits the days. */
     public List<String> getAnnouncements() {
-        return Collections.unmodifiableList(announcements);
+        String today = LocalDate.now().getDayOfWeek().name().substring(0, 3);   // e.g. WED
+        List<String> out = new ArrayList<>();
+        for (String line : announcements) {
+            String text = line.trim();
+            java.util.regex.Matcher m = DAY_TAG.matcher(text);
+            if (m.find()) {
+                String days = m.group(1).toUpperCase();
+                if (!days.contains(today)) continue;                       // not today: skip
+                text = (text.substring(0, m.start()) + text.substring(m.end())).trim();  // remove tag
+            }
+            if (!text.isEmpty()) out.add(text);
+        }
+        return Collections.unmodifiableList(out);
     }
 
     public List<Slide> getSlides() {
@@ -87,7 +104,13 @@ public class ContentService {
         announcements.clear();
         if (items != null) announcements.addAll(items);
     }
-
+    /** Loads the bundled announcements in the given language (falls back to English). */
+    public void loadAnnouncementsFor(String lang) {
+        List<String> lines = readLines("/data/announcements_" + lang + ".txt");
+        if (lines.isEmpty()) lines = readLines("/data/announcements.txt");
+        announcements.clear();
+        announcements.addAll(lines);
+    }
     public void reloadSlides() {
         slides.clear();
         loadUserSlides();

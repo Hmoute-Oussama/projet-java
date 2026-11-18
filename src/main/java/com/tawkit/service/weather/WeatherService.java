@@ -115,10 +115,13 @@ public class WeatherService {
      * avoids any third-party dependency.
      */
     static WeatherData parse(String json) {
-        double curTemp = extractNumber(json, "temperature_2m");
-        int curCode = (int) extractNumber(json, "weather_code");
-        double wind = extractNumber(json, "wind_speed_10m");
-        boolean isDay = extractNumber(json, "is_day") >= 1;
+        String current = extractObject(json, "current");
+        if (current == null) current = json;
+
+        double curTemp = extractNumber(current, "temperature_2m");
+        int curCode = (int) extractNumber(current, "weather_code");
+        double wind = extractNumber(current, "wind_speed_10m");
+        boolean isDay = extractNumber(current, "is_day") >= 1;
 
         String daily = extractObject(json, "daily");
         if (daily == null) return new WeatherData(curTemp, curCode, wind, List.of());
