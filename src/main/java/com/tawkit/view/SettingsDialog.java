@@ -13,6 +13,9 @@ import com.tawkit.service.settings.SettingsService;
 
 import javax.swing.*;
 import javax.swing.filechooser.FileNameExtensionFilter;
+import javax.swing.plaf.basic.BasicButtonUI;
+import javax.swing.plaf.basic.BasicComboBoxUI;
+import javax.swing.plaf.basic.BasicTextFieldUI;
 import java.awt.*;
 import java.io.File;
 import java.nio.file.Path;
@@ -29,6 +32,14 @@ import java.util.LinkedHashMap;
  * and settings backup (export/import).
  */
 public class SettingsDialog extends JDialog {
+
+    private static final Color SETTINGS_BG = new Color(0x0E, 0x0F, 0x10);
+    private static final Color SETTINGS_SURFACE = new Color(0x18, 0x19, 0x1A);
+    private static final Color SETTINGS_FIELD = new Color(0x21, 0x22, 0x22);
+    private static final Color SETTINGS_ACCENT = TawkitTheme.GOLDEN_BEIGE;
+    private static final Color SETTINGS_TEXT = TawkitTheme.WARM_WHITE;
+    private static final Color SETTINGS_MUTED = new Color(0xA8, 0xA8, 0xA8);
+    private static final Color SETTINGS_LINE = new Color(0x35, 0x35, 0x33);
 
     private static final PrayerType[] IQAMA_PRAYERS = {
             PrayerType.FAJR, PrayerType.DHUHR, PrayerType.ASR, PrayerType.MAGHRIB, PrayerType.ISHA
@@ -130,8 +141,8 @@ public class SettingsDialog extends JDialog {
         loadCityCountries();
         Rectangle screen = GraphicsEnvironment.getLocalGraphicsEnvironment().getMaximumWindowBounds();
         double scale = UiScale.factor();
-        int w = (int) Math.min(620 * scale, screen.width * 0.9);
-        int h = (int) Math.min(700 * scale, screen.height * 0.9);
+        int w = (int) Math.min(680 * scale, screen.width * 0.92);
+        int h = (int) Math.min(760 * scale, screen.height * 0.92);
         setSize(w, h);
         setMinimumSize(new Dimension(Math.min(520, screen.width), Math.min(480, screen.height)));
         setResizable(true);
@@ -155,39 +166,280 @@ public class SettingsDialog extends JDialog {
     }
 
     private void buildUI() {
-        setLayout(new BorderLayout(8, 8));
+        getContentPane().setBackground(SETTINGS_BG);
+        setLayout(new BorderLayout(0, 0));
 
-        JTabbedPane tabs = new JTabbedPane();
-        tabs.addTab("Location", buildLocationTab());
-        tabs.addTab("Prayer", buildPrayerTab());
-        tabs.addTab("Iqama", buildIqamaTab());
-        tabs.addTab("Audio", buildAudioTab());
-        tabs.addTab("Display", buildDisplayTab());
-        tabs.addTab("Content", buildContentTab());
-        tabs.addTab("Reminders", buildRemindersTab());
-        tabs.addTab("Backup", buildBackupTab());
-        // Scrollable so every control stays reachable on small/4K screens
-        JScrollPane tabsScroll = new JScrollPane(tabs);
-        tabsScroll.setBorder(null);
-        tabsScroll.getVerticalScrollBar().setUnitIncrement(16);
-        add(tabsScroll, BorderLayout.CENTER);
+        add(buildSettingsHeader(), BorderLayout.NORTH);
 
-        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
-        JButton applyButton = new JButton("Apply");
+        JPanel workspace = new JPanel(new BorderLayout(10, 0));
+        workspace.setOpaque(false);
+        workspace.setBorder(BorderFactory.createEmptyBorder(12, 12, 12, 12));
+
+        JPanel nav = new JPanel();
+        nav.setOpaque(true);
+        nav.setBackground(new Color(0x13, 0x14, 0x16));
+        nav.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(SETTINGS_LINE, 1, true),
+                BorderFactory.createEmptyBorder(8, 8, 8, 8)));
+        nav.setLayout(new BoxLayout(nav, BoxLayout.Y_AXIS));
+
+        CardLayout cards = new CardLayout();
+        JPanel content = new JPanel(cards);
+        content.setOpaque(true);
+        content.setBackground(new Color(0x16, 0x17, 0x19));
+        content.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(SETTINGS_LINE, 1, true),
+                BorderFactory.createEmptyBorder(4, 4, 4, 4)));
+
+        Map<String, JPanel> sections = new LinkedHashMap<>();
+        sections.put("Location", buildLocationTab());
+        sections.put("Prayer", buildPrayerTab());
+        sections.put("Iqama", buildIqamaTab());
+        sections.put("Audio", buildAudioTab());
+        sections.put("Display", buildDisplayTab());
+        sections.put("Content", buildContentTab());
+        sections.put("Reminders", buildRemindersTab());
+        sections.put("Backup", buildBackupTab());
+
+        List<JButton> navButtons = new ArrayList<>();
+        for (Map.Entry<String, JPanel> entry : sections.entrySet()) {
+            JScrollPane scroll = buildScrollableTab(entry.getValue());
+            content.add(scroll, entry.getKey());
+
+            JButton navButton = new JButton(entry.getKey());
+            navButton.putClientProperty("tawkitStyled", Boolean.TRUE);
+            navButton.setAlignmentX(Component.LEFT_ALIGNMENT);
+            navButton.setMaximumSize(new Dimension(Integer.MAX_VALUE, 42));
+            navButton.setHorizontalAlignment(SwingConstants.LEFT);
+            navButton.setOpaque(true);
+            navButton.setContentAreaFilled(true);
+            navButton.setBorderPainted(false);
+            navButton.setFocusPainted(false);
+            navButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+            navButton.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 13));
+            navButton.setForeground(SETTINGS_MUTED);
+            navButton.setBackground(new Color(0x13, 0x14, 0x16));
+            navButton.setBorder(BorderFactory.createEmptyBorder(10, 12, 10, 12));
+            navButton.addActionListener(e -> {
+                cards.show(content, entry.getKey());
+                for (JButton button : navButtons) {
+                    boolean selected = button == navButton;
+                    button.setForeground(selected ? TawkitTheme.BLACK : SETTINGS_MUTED);
+                    button.setBackground(selected ? SETTINGS_ACCENT : new Color(0x13, 0x14, 0x16));
+                }
+            });
+            navButtons.add(navButton);
+            nav.add(navButton);
+            if (navButtons.size() < sections.size()) {
+                nav.add(Box.createVerticalStrut(4));
+            }
+        }
+
+        if (!navButtons.isEmpty()) {
+            JButton first = navButtons.get(0);
+            first.setForeground(TawkitTheme.BLACK);
+            first.setBackground(SETTINGS_ACCENT);
+        }
+        nav.setPreferredSize(new Dimension(155, 0));
+        workspace.add(nav, BorderLayout.WEST);
+        workspace.add(content, BorderLayout.CENTER);
+        add(workspace, BorderLayout.CENTER);
+
+        JPanel buttonPanel = new JPanel(new BorderLayout());
+        buttonPanel.setBackground(SETTINGS_SURFACE);
+        buttonPanel.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createMatteBorder(1, 0, 0, 0, SETTINGS_LINE),
+                BorderFactory.createEmptyBorder(11, 16, 11, 16)));
+
+        JLabel status = new JLabel("Save to keep  •  Apply to update now");
+        status.setForeground(SETTINGS_MUTED);
+        status.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 12));
+        buttonPanel.add(status, BorderLayout.WEST);
+
+        JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+        actions.setOpaque(false);
+        JButton cancelButton = styleButton(new JButton("Cancel"), false);
+        JButton applyButton = styleButton(new JButton("Apply"), false);
         applyButton.setToolTipText("Apply changes to the app without closing");
         applyButton.addActionListener(e -> applyNow());
-        JButton saveButton = new JButton("Save");
-        JButton cancelButton = new JButton("Cancel");
+        JButton saveButton = styleButton(new JButton("Save"), true);
         saveButton.addActionListener(e -> {
             saved = true;
             applyNow();
             dispose();
         });
         cancelButton.addActionListener(e -> dispose());
-        buttonPanel.add(saveButton);
-        buttonPanel.add(applyButton);
-        buttonPanel.add(cancelButton);
+        actions.add(cancelButton);
+        actions.add(applyButton);
+        actions.add(saveButton);
+        buttonPanel.add(actions, BorderLayout.EAST);
         add(buttonPanel, BorderLayout.SOUTH);
+
+        SwingUtilities.invokeLater(this::styleSettingsComponents);
+    }
+
+    private JPanel buildSettingsHeader() {
+        JPanel header = new JPanel(new BorderLayout());
+        header.setBackground(SETTINGS_SURFACE);
+        header.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createMatteBorder(0, 0, 1, 0, SETTINGS_LINE),
+                BorderFactory.createEmptyBorder(14, 18, 14, 18)));
+
+        JLabel mark = new JLabel("TAWKIT");
+        mark.setForeground(SETTINGS_ACCENT);
+        mark.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 11));
+        mark.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(SETTINGS_ACCENT.getRed(),
+                        SETTINGS_ACCENT.getGreen(), SETTINGS_ACCENT.getBlue(), 120), 1, true),
+                BorderFactory.createEmptyBorder(5, 8, 5, 8)));
+        header.add(mark, BorderLayout.WEST);
+
+        JPanel title = new JPanel();
+        title.setOpaque(false);
+        title.setLayout(new BoxLayout(title, BoxLayout.Y_AXIS));
+        JLabel heading = new JLabel("Settings");
+        heading.setForeground(SETTINGS_TEXT);
+        heading.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 22));
+        heading.setAlignmentX(Component.LEFT_ALIGNMENT);
+        JLabel subtitle = new JLabel("Configure Tawkit for this screen");
+        subtitle.setForeground(SETTINGS_MUTED);
+        subtitle.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 12));
+        subtitle.setAlignmentX(Component.LEFT_ALIGNMENT);
+        title.add(heading);
+        title.add(Box.createVerticalStrut(2));
+        title.add(subtitle);
+        header.add(title, BorderLayout.CENTER);
+        return header;
+    }
+
+    private JScrollPane buildScrollableTab(JPanel content) {
+        styleTabPanel(content);
+        JScrollPane scroll = new JScrollPane(content);
+        scroll.setBorder(null);
+        scroll.getViewport().setBackground(SETTINGS_BG);
+        scroll.setBackground(SETTINGS_BG);
+        scroll.getVerticalScrollBar().setUnitIncrement(18);
+        scroll.getVerticalScrollBar().setBlockIncrement(120);
+        return scroll;
+    }
+
+    private void styleTabPanel(JPanel panel) {
+        panel.setOpaque(true);
+        panel.setBackground(SETTINGS_BG);
+        panel.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createEmptyBorder(8, 8, 8, 8),
+                BorderFactory.createCompoundBorder(
+                        BorderFactory.createLineBorder(new Color(0x27, 0x29, 0x2C), 1, true),
+                        BorderFactory.createEmptyBorder(16, 18, 16, 18))));
+    }
+
+    private JButton styleButton(JButton button, boolean primary) {
+        button.putClientProperty("tawkitStyled", Boolean.TRUE);
+        button.setUI(new BasicButtonUI());
+        button.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 13));
+        button.setFocusPainted(false);
+        button.setBorderPainted(false);
+        button.setContentAreaFilled(true);
+        button.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        button.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(primary ? SETTINGS_ACCENT : SETTINGS_LINE, 1, true),
+                BorderFactory.createEmptyBorder(7, 14, 7, 14)));
+        button.setOpaque(true);
+        button.setBackground(primary ? SETTINGS_ACCENT : SETTINGS_FIELD);
+        button.setForeground(primary ? TawkitTheme.BLACK : SETTINGS_TEXT);
+        return button;
+    }
+
+    private void styleSettingsComponents() {
+        styleSettingsComponent(this);
+        revalidate();
+        repaint();
+    }
+
+    private void styleSettingsComponent(Component component) {
+        if (component instanceof JButton button) {
+            if (button.getClientProperty("tawkitStyled") != Boolean.TRUE) {
+                button.setUI(new BasicButtonUI());
+                button.setOpaque(true);
+                button.setForeground(SETTINGS_TEXT);
+                button.setBackground(SETTINGS_FIELD);
+                button.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 12));
+                button.setFocusPainted(false);
+                button.setBorderPainted(false);
+                button.setContentAreaFilled(true);
+                button.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+                button.setBorder(BorderFactory.createCompoundBorder(
+                        BorderFactory.createLineBorder(SETTINGS_LINE, 1, true),
+                        BorderFactory.createEmptyBorder(6, 10, 6, 10)));
+            }
+        } else if (component instanceof JTextField field) {
+            field.setUI(new BasicTextFieldUI());
+            field.setOpaque(true);
+            field.setBackground(SETTINGS_FIELD);
+            field.setForeground(SETTINGS_TEXT);
+            field.setCaretColor(SETTINGS_ACCENT);
+            field.setBorder(BorderFactory.createCompoundBorder(
+                    BorderFactory.createLineBorder(SETTINGS_LINE, 1, true),
+                    BorderFactory.createEmptyBorder(6, 8, 6, 8)));
+        } else if (component instanceof JTextArea area) {
+            area.setOpaque(true);
+            area.setBackground(SETTINGS_FIELD);
+            area.setForeground(SETTINGS_TEXT);
+            area.setCaretColor(SETTINGS_ACCENT);
+            area.setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
+        } else if (component instanceof JComboBox<?> combo) {
+            combo.setUI(new BasicComboBoxUI());
+            combo.setOpaque(true);
+            combo.setBackground(SETTINGS_FIELD);
+            combo.setForeground(SETTINGS_TEXT);
+            combo.setBorder(BorderFactory.createLineBorder(SETTINGS_LINE, 1, true));
+        } else if (component instanceof JSpinner spinner) {
+            spinner.setOpaque(true);
+            spinner.setBackground(SETTINGS_FIELD);
+            spinner.setBorder(BorderFactory.createLineBorder(SETTINGS_LINE, 1, true));
+            JComponent editor = spinner.getEditor();
+            editor.setOpaque(true);
+            editor.setBackground(SETTINGS_FIELD);
+            if (editor instanceof JSpinner.DefaultEditor spinnerEditor) {
+                spinnerEditor.getTextField().setForeground(SETTINGS_TEXT);
+                spinnerEditor.getTextField().setCaretColor(SETTINGS_ACCENT);
+                spinnerEditor.getTextField().setOpaque(true);
+                spinnerEditor.getTextField().setBackground(SETTINGS_FIELD);
+            }
+        } else if (component instanceof JCheckBox check) {
+            check.setOpaque(false);
+            check.setForeground(SETTINGS_TEXT);
+        } else if (component instanceof JSlider slider) {
+            slider.setOpaque(false);
+            slider.setForeground(SETTINGS_ACCENT);
+        } else if (component instanceof JLabel label) {
+            label.setForeground(SETTINGS_TEXT);
+            label.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 13));
+        } else if (component instanceof JList<?> list) {
+            list.setBackground(SETTINGS_FIELD);
+            list.setForeground(SETTINGS_TEXT);
+            list.setSelectionBackground(new Color(0x44, 0x3A, 0x28));
+            list.setSelectionForeground(SETTINGS_ACCENT);
+        } else if (component instanceof JScrollPane scroll) {
+            scroll.setBackground(SETTINGS_BG);
+            scroll.getViewport().setBackground(SETTINGS_BG);
+        } else if (component instanceof JPanel panel) {
+            Color bg = panel.getBackground();
+            boolean preserve =
+                    bg.equals(SETTINGS_SURFACE)
+                    || bg.equals(SETTINGS_BG)
+                    || bg.equals(new Color(0x13, 0x14, 0x16))
+                    || bg.equals(new Color(0x16, 0x17, 0x19));
+            if (!preserve) {
+                panel.setOpaque(false);
+            }
+        }
+
+        if (component instanceof Container container) {
+            for (Component child : container.getComponents()) {
+                styleSettingsComponent(child);
+            }
+        }
     }
 
     /** Pushes the dialog contents into the live settings and notifies the app. */
