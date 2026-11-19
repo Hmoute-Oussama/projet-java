@@ -9,6 +9,8 @@ import com.tawkit.model.settings.AppSettings;
 import com.tawkit.service.city.CityService;
 import com.tawkit.service.city.CountryCodes;
 import com.tawkit.service.location.PreciseLocationService;
+import com.tawkit.service.audio.AdhanCatalog;
+import com.tawkit.service.audio.AudioService;
 import com.tawkit.service.settings.SettingsService;
 
 import javax.swing.*;
@@ -82,8 +84,16 @@ public class SettingsDialog extends JDialog {
     private final JSlider volumeSlider = new JSlider(0, 100, 100);
     private final JCheckBox preFajrAlertCheck = new JCheckBox("Alert before Fajr", true);
     private final JSpinner preFajrMinutes = new JSpinner(new SpinnerNumberModel(10, 1, 60, 1));
-    /** Custom adhan WAV per prayer (#6) — empty text uses the bundled sound. */
+    /** Bundled recordings, chosen by name and applied to every prayer. */
+    private final JComboBox<AdhanCatalog.Entry> adhanCombo = new JComboBox<>();
+    /** Narrows the large recording list while typing. */
+    private final JTextField adhanSearch = new JTextField(14);
+    private AdhanCatalog.Entry lastAdhanSelection = AdhanCatalog.BUNDLED_DEFAULT;
+    private boolean rebuildingAdhanChoices = false;
+    private final AudioService previewAudio = new AudioService();
+    /** Custom adhan file per prayer (#6) — empty text uses the selected recording. */
     private final Map<PrayerType, JTextField> adhanFileFields = new LinkedHashMap<>();
+    private final JLabel adhanSelectionStatus = new JLabel("Using bundled adhan");
 
     // Jumu'a (#5)
     private final JCheckBox jumuaCheck = new JCheckBox("Jumu'a mode (khutba time replaces Dhuhr iqama on Fridays)", true);
@@ -161,6 +171,7 @@ public class SettingsDialog extends JDialog {
             @Override
             public void windowClosed(java.awt.event.WindowEvent e) {
                 previewScreen.stop();
+                previewAudio.stop();
             }
         });
     }
@@ -859,22 +870,73 @@ public class SettingsDialog extends JDialog {
         panel.add(adhanCheck, gbc);
         gbc.gridwidth = 1;
 
+        // ---- bundled recordings, chosen by name ----
+        adhanCombo.setToolTipText(
+                "Choose the adhan played at prayer times (applies to every prayer)");
+        adhanCombo.addActionListener(e -> {
+            if (rebuildingAdhanChoices) return;
+            AdhanCatalog.Entry selected = (AdhanCatalog.Entry) adhanCombo.getSelectedItem();
+            if (selected != null) lastAdhanSelection = selected;
+            previewAudio.stop();
+            updateAdhanSelectionStatus();
+        });
+        refreshAdhanChoices();
+
         gbc.gridy = 1; gbc.gridx = 0;
+        panel.add(new JLabel("Adhan recitation:"), gbc);
+        gbc.gridx = 1;
+        JButton previewAdhan = styleButton(new JButton("▶ Preview"), false);
+        previewAdhan.setToolTipText("Listen to the selected recording");
+        previewAdhan.addActionListener(e -> previewSelectedAdhan());
+        JPanel recitationRow = new JPanel(new BorderLayout(6, 0));
+        recitationRow.setOpaque(false);
+        recitationRow.add(adhanCombo, BorderLayout.CENTER);
+        recitationRow.add(previewAdhan, BorderLayout.EAST);
+        panel.add(recitationRow, gbc);
+
+        adhanSearch.setToolTipText("Type a name to narrow the list");
+        adhanSearch.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
+            @Override public void insertUpdate(javax.swing.event.DocumentEvent e) {
+                refreshAdhanChoices();
+            }
+
+            @Override public void removeUpdate(javax.swing.event.DocumentEvent e) {
+                refreshAdhanChoices();
+            }
+
+            @Override public void changedUpdate(javax.swing.event.DocumentEvent e) {
+                refreshAdhanChoices();
+            }
+        });
+
+        gbc.gridy = 2; gbc.gridx = 0;
+        panel.add(new JLabel("Find adhan:"), gbc);
+        gbc.gridx = 1;
+        panel.add(adhanSearch, gbc);
+
+        gbc.gridy = 3; gbc.gridx = 0; gbc.gridwidth = 2;
+        JLabel recitationHint = new JLabel(
+                "<html><i>Applies to all prayers. A custom file below overrides it.</i></html>");
+        recitationHint.setForeground(SETTINGS_MUTED);
+        panel.add(recitationHint, gbc);
+        gbc.gridwidth = 1;
+
+        gbc.gridy = 4; gbc.gridx = 0;
         panel.add(new JLabel("Volume:"), gbc);
         gbc.gridx = 1;
         panel.add(volumeSlider, gbc);
 
-        gbc.gridy = 2; gbc.gridx = 0; gbc.gridwidth = 2;
+        gbc.gridy = 5; gbc.gridx = 0; gbc.gridwidth = 2;
         panel.add(preFajrAlertCheck, gbc);
         gbc.gridwidth = 1;
 
-        gbc.gridy = 3; gbc.gridx = 0;
+        gbc.gridy = 6; gbc.gridx = 0;
         panel.add(new JLabel("Minutes before Fajr:"), gbc);
         gbc.gridx = 1;
         panel.add(preFajrMinutes, gbc);
 
         // Live test so the slider is verifiable immediately
-        gbc.gridy = 4; gbc.gridx = 0;
+        gbc.gridy = 7; gbc.gridx = 0;
         panel.add(new JLabel(""), gbc);
         gbc.gridx = 1;
         JButton testSound = new JButton("🔊 Test sound");
@@ -896,19 +958,46 @@ public class SettingsDialog extends JDialog {
         testRow.add(testSound);
         panel.add(testRow, gbc);
 
-        gbc.gridy = 5; gbc.gridx = 0; gbc.gridwidth = 2;
-        panel.add(new JLabel("<html><i>Adhan plays bundled WAV files from "
-                + "<b>assets/audio/</b> — or a chime when none exist.</i></html>"), gbc);
+        gbc.gridy = 8; gbc.gridx = 0; gbc.gridwidth = 2;
+        panel.add(new JLabel("Or use your own audio file for every prayer:"), gbc);
+
+        JButton chooseAllAdhan = styleButton(
+                new JButton("Choose file for all prayers"), false);
+        chooseAllAdhan.addActionListener(e -> chooseAdhanForAllPrayers());
+        JButton useBundledAdhan = styleButton(new JButton("Reset to default"), false);
+        useBundledAdhan.addActionListener(e -> resetAdhanFiles());
+        JPanel allPrayerRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        allPrayerRow.setOpaque(false);
+        allPrayerRow.add(chooseAllAdhan);
+        allPrayerRow.add(useBundledAdhan);
+        gbc.gridy = 9; gbc.gridx = 0; gbc.gridwidth = 2;
+        panel.add(allPrayerRow, gbc);
+
+        gbc.gridy = 10; gbc.gridx = 0; gbc.gridwidth = 2;
+        panel.add(adhanSelectionStatus, gbc);
 
         // ---- Per-prayer custom adhan files (#6) ----
-        gbc.gridy = 5; gbc.gridx = 0; gbc.gridwidth = 2;
-        panel.add(new JLabel("Custom adhan WAV per prayer (blank = bundled):"), gbc);
+        gbc.gridy = 11; gbc.gridx = 0; gbc.gridwidth = 2;
+        panel.add(new JLabel("Custom adhan file per prayer (blank = selected adhan):"), gbc);
         gbc.gridwidth = 1;
-        int fileRow = 6;
+        int fileRow = 12;
         for (PrayerType type : IQAMA_PRAYERS) {
             JTextField field = new JTextField(14);
             adhanFileFields.put(type, field);
-            JButton browse = new JButton("…");
+            field.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
+                @Override public void insertUpdate(javax.swing.event.DocumentEvent e) {
+                    updateAdhanSelectionStatus();
+                }
+
+                @Override public void removeUpdate(javax.swing.event.DocumentEvent e) {
+                    updateAdhanSelectionStatus();
+                }
+
+                @Override public void changedUpdate(javax.swing.event.DocumentEvent e) {
+                    updateAdhanSelectionStatus();
+                }
+            });
+            JButton browse = new JButton("Choose...");
             browse.addActionListener(e -> chooseAdhanFile(field));
 
             gbc.gridy = fileRow; gbc.gridx = 0;
@@ -923,11 +1012,115 @@ public class SettingsDialog extends JDialog {
         return panel;
     }
 
+    /** Rebuilds the combo from the search text, keeping a sensible selection. */
+    private void refreshAdhanChoices() {
+        String filter = adhanSearch.getText().trim().toLowerCase(java.util.Locale.ROOT);
+        AdhanCatalog.Entry previous = (AdhanCatalog.Entry) adhanCombo.getSelectedItem();
+        if (previous == null) previous = lastAdhanSelection;
+
+        rebuildingAdhanChoices = true;
+        try {
+            adhanCombo.removeAllItems();
+            for (AdhanCatalog.Entry entry : AdhanCatalog.choices()) {
+                if (filter.isEmpty()
+                        || entry.displayName().toLowerCase(java.util.Locale.ROOT)
+                                .contains(filter)) {
+                    adhanCombo.addItem(entry);
+                }
+            }
+            if (adhanCombo.getItemCount() > 0) {
+                adhanCombo.setSelectedItem(previous);
+                if (!(adhanCombo.getSelectedItem() instanceof AdhanCatalog.Entry)) {
+                    adhanCombo.setSelectedIndex(0);
+                }
+                if (adhanCombo.getSelectedItem() instanceof AdhanCatalog.Entry current) {
+                    lastAdhanSelection = current;
+                }
+            }
+        } finally {
+            rebuildingAdhanChoices = false;
+        }
+        updateAdhanSelectionStatus();
+    }
+
+    private void previewSelectedAdhan() {
+        AdhanCatalog.Entry entry = (AdhanCatalog.Entry) adhanCombo.getSelectedItem();
+        if (entry == null) return;
+        previewAudio.stop();
+        previewAudio.setEnabled(true);
+        previewAudio.setVolume(volumeSlider.getValue() / 100.0);
+        previewAudio.setSelectedAdhan(entry.id());
+        // ADHAN with no prayer plays the chosen recording even for Fajr entries.
+        previewAudio.play(AudioService.Sound.ADHAN, null);
+    }
+
     private void chooseAdhanFile(JTextField target) {
+        String path = selectAdhanFile();
+        if (path != null) {
+            target.setText(path);
+            updateAdhanSelectionStatus();
+        }
+    }
+
+    private void chooseAdhanForAllPrayers() {
+        String path = selectAdhanFile();
+        if (path == null) return;
+        for (PrayerType type : IQAMA_PRAYERS) {
+            adhanFileFields.get(type).setText(path);
+        }
+        updateAdhanSelectionStatus();
+    }
+
+    private void resetAdhanFiles() {
+        for (JTextField field : adhanFileFields.values()) {
+            field.setText("");
+        }
+        adhanSearch.setText("");
+        if (adhanCombo.getItemCount() > 0) {
+            adhanCombo.setSelectedIndex(0);
+        }
+        lastAdhanSelection = AdhanCatalog.BUNDLED_DEFAULT;
+        previewAudio.stop();
+        updateAdhanSelectionStatus();
+    }
+
+    private String selectAdhanFile() {
         JFileChooser chooser = new JFileChooser();
-        chooser.setFileFilter(new FileNameExtensionFilter("WAV audio", "wav"));
+        chooser.setFileFilter(new FileNameExtensionFilter("Audio (WAV, MP3)", "wav", "mp3"));
         if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
-            target.setText(chooser.getSelectedFile().getAbsolutePath());
+            return chooser.getSelectedFile().getAbsolutePath();
+        }
+        return null;
+    }
+
+    private void updateAdhanSelectionStatus() {
+        String selectedPath = null;
+        boolean hasDifferentPaths = false;
+        for (JTextField field : adhanFileFields.values()) {
+            String path = field.getText().trim();
+            if (path.isEmpty()) continue;
+            if (selectedPath == null) {
+                selectedPath = path;
+            } else if (!selectedPath.equals(path)) {
+                hasDifferentPaths = true;
+                break;
+            }
+        }
+
+        if (hasDifferentPaths) {
+            adhanSelectionStatus.setText("Different custom file selected per prayer");
+        } else if (selectedPath != null) {
+            adhanSelectionStatus.setText("Custom file: " + new File(selectedPath).getName());
+        } else if (adhanCombo.getItemCount() == 0) {
+            String query = adhanSearch.getText().trim();
+            adhanSelectionStatus.setText(query.isEmpty()
+                    ? "No adhan available"
+                    : "No adhan matches \"" + query + "\"");
+        } else {
+            AdhanCatalog.Entry entry = (AdhanCatalog.Entry) adhanCombo.getSelectedItem();
+            adhanSelectionStatus.setText(entry == null || entry.id().isBlank()
+                    ? "Using bundled adhan (Hassan II Mosque)"
+                    : "Selected: " + entry.displayName());
         }
     }
 
@@ -1243,9 +1436,15 @@ public class SettingsDialog extends JDialog {
         volumeSlider.setValue((int) Math.round(settings.getAudioVolume() * 100));
         preFajrAlertCheck.setSelected(settings.isPreFajrAlertEnabled());
         preFajrMinutes.setValue(settings.getPreFajrAlertMinutes());
+        adhanSearch.setText("");
+        adhanCombo.setSelectedItem(AdhanCatalog.byId(settings.getAdhanSoundId()));
+        if (adhanCombo.getSelectedItem() instanceof AdhanCatalog.Entry loadedAdhan) {
+            lastAdhanSelection = loadedAdhan;
+        }
         for (PrayerType type : IQAMA_PRAYERS) {
             adhanFileFields.get(type).setText(settings.getAdhanSoundFile(type)); // #6
         }
+        updateAdhanSelectionStatus();
 
         jumuaCheck.setSelected(settings.isJumuaEnabled()); // #5
         jumuaKhutbaField.setText(settings.getJumuaKhutbaTime() != null
@@ -1332,6 +1531,9 @@ public class SettingsDialog extends JDialog {
         settings.setAudioVolume(volumeSlider.getValue() / 100.0);
         settings.setPreFajrAlertEnabled(preFajrAlertCheck.isSelected());
         settings.setPreFajrAlertMinutes((Integer) preFajrMinutes.getValue());
+        AdhanCatalog.Entry chosen = (AdhanCatalog.Entry) adhanCombo.getSelectedItem();
+        if (chosen == null) chosen = lastAdhanSelection;
+        settings.setAdhanSoundId(chosen == null ? "" : chosen.id());
         for (PrayerType type : IQAMA_PRAYERS) {
             settings.setAdhanSoundFile(type, adhanFileFields.get(type).getText().trim()); // #6
         }
